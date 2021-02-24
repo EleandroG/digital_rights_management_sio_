@@ -21,6 +21,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, hmac
+from cryptography.hazmat.primitives.asymmetric import padding
 
 logger = logging.getLogger('root')
 FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
@@ -129,7 +130,7 @@ def decrypt_data(data):
 activesession = False
 def cryptography():
     #diffie helman
-    req = requests.get(f'{Server_URL}/api/dh-parameters')
+    req = requests.get(f'{SERVER_URL}/api/dh-parameters')
     if req.status_code == 200:
         print("Got dh-parameters")
     dh_param = req.json()
@@ -163,7 +164,7 @@ def cryptography():
     message = req.json()
     message = message["data"].encode('latin')
     #decrypt message
-    message = decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
+    message = server.decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
     print(f"server message:  {message}")
     return dh_param,dh_private_k,secret_key,cipher_list
 
@@ -176,7 +177,7 @@ def authentication():
     req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps(
         {"nonce":encripted_client_nonce}
     ).encode())
-    if request.status_code = 200:
+    if requests.status_code == 200:
         print("Received Certificated and Signed Nonce")
 
     data = req.json() #Validate the server certificate
@@ -190,31 +191,32 @@ def authentication():
     server_cert = data["server_cert"].encode('latin')
     server_cert = server.decrypt(secret_key,server_cert,cipher_list[0],cipher_list[1])
 
-    server_cert = server.certif # Por fazer
+    server_cert = server.certificate_from_pem(server_cert) # Por fazer
 
-    cert_data = server.load...
+    cert_data = server.load_certificate_from_disk("../server_CA/CA.pem")
 
-    cert ...
+
+    cert = server.certificate_object_from_pem(cert_data)
 
     certificates = {}
     certificates[cert.subject.rfc4514_string()] = cert
 
     chain = []
 
-    chain_completed = ....
+    chain_completed = server.build_certificate_chain(chain,server_cert,certificates)
 
     if not chain_completed:
         print(" Certificated Chain is not completed")
         return False
 
     else:
-        complete_Chain,error = server.val.....
+        complete_Chain,error = server.validate_certificate_chain(chain)
 
         if not complete_Chain:
             print(error)
             return False
         else:
-            if not server...Validate
+            if not server.verify_signature(server_cert,signed_client_nonce,client_nonce):
                 return False
     print("SUCESS..Validated the server certicate chain and nonce signed by the server ")
     # Parte do Cartão de cidadão --->send cc info
@@ -334,11 +336,11 @@ def main():
     id = 0
     for item in media_list_enc:
         media_list.append({
-            "id" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["id"], cipher_list[0], cipher_list[1]).decode(),
-            "name" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["name"], cipher_list[0], cipher_list[1]).decode(),
-            "description" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["description"], cipher_list[0], cipher_list[1]).decode(),
-            "chunks" : int(symmetriccrypt.decrypt(secret_key, media_list_enc[id]["chunks"], cipher_list[0], cipher_list[1]).decode()),
-            "duration" : int(symmetriccrypt.decrypt(secret_key, media_list_enc[id]["duration"], cipher_list[0], cipher_list[1]).decode())
+            "id" : server.decrypt(secret_key, media_list_enc[id]["id"], cipher_list[0], cipher_list[1]).decode(),
+            "name" : server.decrypt(secret_key, media_list_enc[id]["name"], cipher_list[0], cipher_list[1]).decode(),
+            "description" : server.decrypt(secret_key, media_list_enc[id]["description"], cipher_list[0], cipher_list[1]).decode(),
+            "chunks" : int(server.decrypt(secret_key, media_list_enc[id]["chunks"], cipher_list[0], cipher_list[1]).decode()),
+            "duration" : int(server.decrypt(secret_key, media_list_enc[id]["duration"], cipher_list[0], cipher_list[1]).decode())
         })
         id += 1
 
@@ -447,7 +449,7 @@ def main():
 if __name__ == '__main__':
     dh_parameters, dh_private_key, secret_key, cipher_list = cryptography()
 
-    authen = auth()
+    authen = authentication()
     while True:
         rsa_exchange()
         main()
