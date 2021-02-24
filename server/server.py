@@ -299,20 +299,23 @@ class MediaServer(resource.Resource):
             data = f.read(CHUNK_SIZE)
 
             #signature!  a ir buscar os rsa's
+            #data_signature = rsa_sign(rsa_utils.load_rsa_private_key(), data)
 
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps(
                 {
-                    'media_id': media_id,
-                    'chunk': chunk_id,
-                    'data': binascii.b2a_base64(data).decode('latin').strip()
-                    # data signature
+                    'media_id': encrypt(self.secret_key, media_id, self.ciphers[0], self.ciphers[1]).decode('latin'),
+                    'chunk': encrypt(self.secret_key, str(chunk_id), self.ciphers[0], self.ciphers[1]).decode('latin'),
+                    'data': encrypt(self.secret_key, binascii.b2a_base64(data).decode('latin').strip(),
+                                    self.ciphers[0], self.ciphers[1]).decode('latin'),
+                    #'data_signature': symmetriccrypt.encrypt(self.secret_key, data_signature, self.client_chosen_ciphers[0], self.client_chosen_ciphers[1]).decode('latin')
                 }, indent=4
             ).encode('latin')
 
         #File was not open?
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-        return encrypt_data(json.dumps({'error': 'unknown'}, indent=4), who)
+        return json.dumps({'error': symmetriccrypt.encrypt(self.secret_key, 'unknown', self.ciphers[0],
+                                                           self.ciphers[1]).decode('latin')}, indent=4).encode('latin')
 
     #server authenticate
     #cliente authenticate
