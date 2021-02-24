@@ -254,34 +254,49 @@ def authentication():
         return False
 
     """
+def rsa_exchange():
+    private_key,public_key = server.generate_rsa_key_pair(2048, "../rsa_keys/cliente.pem")
 
+    pubk_enc = server.encrypt(secret_key, 
+        public_key.public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode(), 
+        cipher_list[0], 
+        cipher_list[1]
+    ).decode('latin')
+    
+    req = requests.post(f'{SERVER_URL}/api/rsa_exchange',
+    data = json.dumps({"client_rsa_pub_key": pubk_enc}).encode()
+    
 
+    )
 
+    if req.status_code == 200:
+        print("Received Server public rsa key")
 
+    data = req.json()
 
+    server_rsa_public_key = data["server_rsa_public_key"].encode()
+    server_rsa_public_key = server.decrypt(secret_key,server_rsa_public_key,
+    cipher_list[0],cipher_list[1])
 
+    fileToSave_public_key = open("../rsa_keys/server_rsa_pub_key.pub", 'wb')
+    fileToSave_public_key.write(server_rsa_public_key)
+    fileToSave_public_key.close()
+    
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+def rsa_verify(public_key, message, signature):
+    #message = message.encode()
+    try:
+        public_key.verify(signature,
+                      message,
+                      padding.PSS(mgf=padding.MGF1(hashes.SHA384()),
+                                  salt_length=padding.PSS.MAX_LENGTH),
+                      hashes.SHA384())
+    except:
+        #print("invalid signature")
+        return False
+    else:
+        #print("valid signature")
+        return True
 
 def main():
     print("|--------------------------------------|")
@@ -297,104 +312,39 @@ def main():
         # Get a list of media files
         print("...Contacting Server...")
 
-        """Server receives "Hello" message"""
-        posting = requests.post(f'{SERVER_URL}/api/hello', cookies=cookies, data="Hello")
-
-        if posting.text != "hello":
-            """Receive a user ID"""
-            cookies['session_id'] = posting.text
-
-            algorithms = ['AES',  'TripleDES']
-            modes = ['ECB','CFB', 'CTR', 'OFB']
-            diges = ['SHA256', 'SHA512', 'SHA3256']
-            code = 0
-
-            for alg in algorithms:
-                for mod in modes:
-                    for dig in diges:
-                        message = alg + '_' + mod + '_' + dig
-                        posting = requests.post(f'{SERVER_URL}/api/csuit', data=message, cookies=cookies)
-                        code = posting.status_code
-                        if code == 200:
-                            CSUIT = message
-                            break
-                    if code == 200:
-                        break
-                if code == 200:
-                    break
-            if (code != 200):
-                return
-
-            """Generate a private key for use in the exchange"""
-            private_key = parameters.generate_private_key()
-
-            """Generate a public key"""
-            public_key = private_key.public_key()
-
-            """Transform public key to be a readable and a sendable object"""
-            pem = public_key.public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo)
-
-            """Send the public key to the server and receive the server public key"""
-            posting = requests.post(f'{SERVER_URL}/api/diffiehellman', data=pem, cookies=cookies)
-            info = posting.json()
-
-            """Get the IVs"""
-            ivs = info['ivs']
-
-            """Get the server public key"""
-            server_public_key = serialization.load_pem_public_key(
-                info['pem'].encode('latin'))
-
-            """Exchange using our private key and the server's public key"""
-            shared_key = private_key.exchange(server_public_key)
-
-            """Key derivation"""
-            derived_key = HKDF(
-                algorithm=hashes.SHA256(),
-                length=96,
-                salt=None,
-                info=b'handshake data').derive(shared_key)
-
-            key1 = HKDF(
-                algorithm=hashes.SHA256(),
-                length=16,
-                salt=None,
-                info=b'handshake data').derive(derived_key[0:31])
-
-            key2 = HKDF(
-                algorithm=hashes.SHA256(),
-                length=16,
-                salt=None,
-                info=b'handshake data').derive(derived_key[32:63])
-
-            key3 = HKDF(
-                algorithm=hashes.SHA256(),
-                length=16,
-                salt=None,
-                info=b'handshake data').derive(derived_key[64:95])
-
-            dKey = HKDF(
-                algorithm=hashes.SHA256(),
-                length=16,
-                salt=None,
-                info=b'handshake data').derive(key1 + key2 + key3)
-
-            """Create and save ciphers + HMAC"""
-            ciphers += [cipher(key1, ivs[0].encode('latin'))]
-            ciphers += [cipher(key2, ivs[1].encode('latin'))]
-            ciphers += [start_hmac(key3)]
-
+        headers = {"oid":OID_CLIENT}
+        
         """Active session is true because there is an active session up and running"""
         activesession = True
+
+    request = requests.Session()
+    request.headers.update(headers)
 
     """Get the music list now that we have permission"""
     req = requests.get(f'{SERVER_URL}/api/list', cookies=cookies)
     if req.status_code == 200:
         print("Got Server List")
+    else:
+        print(server.decrypt(secret_key,req.json(),cipher_list[0],
+        cipher_list[1]).decode())
+        sys.exit(0)
 
-    media_list = json.loads(decrypt_data(req.content))
+    media_list_enc = req.json()
+    media_list = []
+    id = 0
+    for item in media_list_enc:
+        media_list.append({
+            "id" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["id"], cipher_list[0], cipher_list[1]).decode(),
+            "name" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["name"], cipher_list[0], cipher_list[1]).decode(),
+            "description" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["description"], cipher_list[0], cipher_list[1]).decode(),
+            "chunks" : int(symmetriccrypt.decrypt(secret_key, media_list_enc[id]["chunks"], cipher_list[0], cipher_list[1]).decode()),
+            "duration" : int(symmetriccrypt.decrypt(secret_key, media_list_enc[id]["duration"], cipher_list[0], cipher_list[1]).decode())
+        })
+        id += 1
+
+
+
+    #media_list = json.loads(decrypt_data(req.content))
 
     """Menu"""
     index = 0
@@ -425,10 +375,11 @@ def main():
             licenses[selection][0] -= 1
             print(licenses.get(int(selection))[0])
             break
+    
 
     media_item = media_list[selection]
     print(f"Playing {media_item['name']}")
-
+    print(media_item['chunks'])
     # Detect if we are running on Windows or Linux
     # You need to have ffplay or ffplay.exe in the current folder
     # In alternative, provide the full path to the executable
@@ -441,6 +392,28 @@ def main():
     for chunk in range(media_item['chunks'] + 1):
         """Decrypt based on key rotation"""
         req = requests.get(f'{SERVER_URL}/api/download?id={media_item["id"]}&chunk={chunk}', cookies=cookies)
+        if not req.status_code == 200:
+            print(server.decrypt(secret_key,req.json()['error'],cipher_list[0],cipher_list[1]).decode())
+
+        chunk = req.json()
+
+        data = binascii.a2b_base64(server.decrypt(secret_key,chunk['data'].encode('latin'),
+        cipher_list[0],cipher_list[1]))
+        data_signature = server.decrypt(secret_key,chunk['data_signature'],cipher_list(0),
+        cipher_list[1])
+
+        if not rsa_verify(server.load_rsa_private_key("../rsa_keys/server_rsa_pub_key.pub"),data,data_signature):
+            print("The file sent from the server is not of trust")
+            sys.exit(0)
+        print("Chunk has a valid signature")
+        try:
+            proc.stdin.write(data)
+        except:
+            request.get(f'{SERVER_URL}/api/finished?id={media_item["id"]}')
+            if req.status == 200:
+                print(server.decrypt(secret_key,req.json(),cipher_list[0],cipher_list[1]).decode())
+            break
+        """
         encrypted_data = json.loads(decrypt_data(req.content))
         if ("error" in encrypted_data.keys()):
             break
@@ -466,11 +439,16 @@ def main():
         except:
             break
     proc.stdin.close()
+    """
     proc.kill()
     proc.terminate()
 
 
 if __name__ == '__main__':
+    dh_parameters, dh_private_key, secret_key, cipher_list = cryptography()
+
+    authen = auth()
     while True:
+        rsa_exchange()
         main()
         time.sleep(1)
