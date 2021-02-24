@@ -55,8 +55,6 @@ users = []
 CSUIT = {}
 
 """ """
-
-
 def generate_key(algorithm, salt):
     password = getpass()
     password = password.encode()
@@ -75,8 +73,6 @@ def generate_key(algorithm, salt):
 
 
 """This function is used to encrypt the data"""
-
-
 def encrypt(algorithm, cipherMode, file_to_be_encrypted, file_to_be_saved):
     salt = os.urandom(16)
     key = generate_key(algorithm, salt)
@@ -126,8 +122,6 @@ def encrypt(algorithm, cipherMode, file_to_be_encrypted, file_to_be_saved):
 
 
 """This function is used to decrypt the data"""
-
-
 def decrypt(algorithm, cipherMode, file_to_be_decrypted, file_to_be_saved):
     decrypted_file = open(file_to_be_decrypted, 'rb')
     saved_file = open(file_to_be_saved, 'w')
@@ -185,14 +179,9 @@ def diffie_hellman_generate_private_key(parameters):
     return private_key
 
 
-####################################################################################################
-
 def diffie_hellman_generate_public_key(private_key):
     public_key = private_key.public_key()
     return public_key
-
-
-# TESTE
 
 class MediaServer(resource.Resource):
     isLeaf = True
@@ -205,8 +194,8 @@ class MediaServer(resource.Resource):
         self.nonce = None
         self.users = []
 
-    # Send the list of media files to clients
-    def do_list(self, request, who):
+    #Send the list of media files to clients
+    def do_list(self, request):
 
         # object identifier OID
         # auth = request.getHeader('Authorization')
@@ -214,50 +203,67 @@ class MediaServer(resource.Resource):
         #    request.setResponseCode(401)
         #    return 'Not authorized'
 
-        # Build list
+        #object_identifier = request.getHeader('Object Identifier')
+        #if object_identifier not in self.users:
+        #    request.setResponseCode(401)
+        #    return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
+        #                                             self.ciphers[1]).decode('latin')).encode()
+
+        #Build list
         media_list = []
         for media_id in CATALOG:
             media = CATALOG[media_id]
             media_list.append({
-                'id': media_id,
-                'name': media['name'],
-                'description': media['description'],
-                'chunks': math.ceil(media['file_size'] / CHUNK_SIZE),
-                'duration': media['duration']
+                'id': encrypt(self.secret_key, media_id, self.ciphers[0], self.ciphers[1]).decode('latin'),
+                'name': encrypt(self.secret_key, media['name'], self.ciphers[0], self.ciphers[1]).decode('latin'),
+                'description': encrypt(self.secret_key, media['description'], self.ciphers[0],
+                                       self.ciphers[1]).decode('latin'),
+                'chunks': encrypt(self.secret_key, str(math.ceil(media['file_size'] / CHUNK_SIZE)),
+                                  self.ciphers[0], self.ciphers[1]).decode('latin'),
+                'duration': encrypt(self.secret_key, str(media['duration']), self.ciphers[0],
+                                    self.ciphers[1]).decode('latin')
             })
 
-        # Return list to client
+        #Return list to client
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
         return json.dumps(media_list, indent=4).encode('latin')
 
-    # Send a media chunk to the client
+    #Send a media chunk to the client
     def do_download(self, request, who):
-        # Object identifier
-
         logger.debug(f'Download: args: {request.args}')
 
         media_id = request.args.get(b'id', [None])[0]
         logger.debug(f'Download: id: {media_id}')
 
-        # Check if the media_id is not None as it is required
+        #Object identifier
+        #object_identifier = request.getHeader('oid')
+        #if object_identifier not in self.users:
+        #    request.setResponseCode(401)
+        #    return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
+        #                              self.ciphers[1]).decode('latin')).encode()
+
+        #Check if the media_id is not None as it is required
         if media_id is None:
             request.setResponseCode(400)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': 'invalid media id'}).encode('latin')
+            return json.dumps({'error': encrypt(self.secret_key, 'invalid Media ID',
+                                                self.ciphers[0], self.ciphers[1]).decode('latin')}).encode('latin')
 
-        # Convert bytes to str
+        #Convert bytes to str
         media_id = media_id.decode('latin')
 
-        # Search media_id in the catalog
+        #Search media_id in the catalog
         if media_id not in CATALOG:
             request.setResponseCode(404)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': 'media file not found'}).encode('latin')
+            return json.dumps({'error': encrypt(self.secret_key, 'media file not found',
+                                                               self.ciphers[0],
+                                                               self.ciphers[1]).decode('latin')}).encode('latin')
 
-        # Get the media item
+        #Get the media item
         media_item = CATALOG[media_id]
 
-        # Check if a chunk is valid
+        #Check if a chunk is valid
         chunk_id = request.args.get(b'chunk', [b'0'])[0]
         valid_chunk = False
         try:
@@ -270,7 +276,9 @@ class MediaServer(resource.Resource):
         if not valid_chunk:
             request.setResponseCode(400)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': 'invalid chunk id'}).encode('latin')
+            return json.dumps({'error': encrypt(self.secret_key, 'invalid chunk id',
+                                                               self.ciphers[0],
+                                                               self.ciphers[1]).decode('latin')}).encode('latin')
 
         # if(who not in readings.keys()):
         #    readings[who] = {media_id:0}
@@ -283,14 +291,14 @@ class MediaServer(resource.Resource):
 
         offset = chunk_id * CHUNK_SIZE
 
-        # readings[who][media_id] += CHUNK_SIZE
+        #readings[who][media_id] += CHUNK_SIZE
 
-        # Open file, seek to correct position and return the chunk
+        #Open file, seek to correct position and return the chunk
         with open(os.path.join(CATALOG_BASE, media_item['file_name']), 'rb') as f:
             f.seek(offset)
             data = f.read(CHUNK_SIZE)
 
-            # signature!  a ir buscar os rsa's
+            #signature!  a ir buscar os rsa's
 
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps(
@@ -302,16 +310,15 @@ class MediaServer(resource.Resource):
                 }, indent=4
             ).encode('latin')
 
-        # File was not open?
+        #File was not open?
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
         return encrypt_data(json.dumps({'error': 'unknown'}, indent=4), who)
 
-    # server authenticate
-    # cliente authenticate
-    # rsa exchange
+    #server authenticate
+    #cliente authenticate
+    #rsa exchange
 
     """Handle a GET request"""
-
     def render_GET(self, request):
         logger.debug(f'Received request for {request.uri}')
 
@@ -347,7 +354,6 @@ class MediaServer(resource.Resource):
             return b''
 
     """Handle a POST request"""
-
     def render_POST(self, request):
         logger.debug(f'Received POST for {request.uri}')
         try:
@@ -393,5 +399,5 @@ print("Server started")
 print("URL is: http://IP:8083")
 
 s = server.Site(MediaServer())
-reactor.listenTCP(8080, s)
+reactor.listenTCP(8083, s)
 reactor.run()
