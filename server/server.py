@@ -4,16 +4,25 @@
 83069 - Eleandro Laureano
 78444 - Nuno Matamba
 """
-
+from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 from twisted.web import server, resource
 from twisted.internet import reactor, defer
 from getpass import getpass
 from base64 import b64encode, b64decode
+from cryptography import x509
+from cryptography.x509 import ObjectIdentifier
 import logging
 import binascii
 import json
 import os
 import math
+import requests
+from cryptography.hazmat.primitives.asymmetric import padding
+from datetime import datetime
+from cryptography.x509.oid import ExtensionOID
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.x509.extensions import CRLDistributionPoints
 from cryptography.hazmat.primitives.ciphers import Cipher
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives.asymmetric import dh
@@ -54,7 +63,8 @@ readings = {}
 users = []
 CSUIT = {}
 
-""" """
+
+"""This function is used to generate a key"""
 def generate_key(algorithm, salt):
     password = getpass()
     password = password.encode()
@@ -161,27 +171,217 @@ def decrypt(algorithm, cipherMode, file_to_be_decrypted, file_to_be_saved):
     decrypted_file.close()
     saved_file.close()
 
-
+"""This function is used to return the Diffie Hellman parameters"""
 def diffie_hellman_parameters(key=2048):
     parameters = dh.generate_parameters(generator=2, key_size=key)
     return parameters
 
-
+"""This function is used to return the derived key"""
 def diffie_hellman_common_secret(peer_public_key, private_key):
     shared_key = private_key.exchange(peer_public_key)
     derived_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'handshake data').derive(shared_key)
     return derived_key
 
-
+"""This function is used to generate a private key used in the exchange"""
 def diffie_hellman_generate_private_key(parameters):
-    # Generate a private key for use in the exchange.
     private_key = parameters.generate_private_key()
     return private_key
 
-
+"""This function is used to generate e public key"""
 def diffie_hellman_generate_public_key(private_key):
     public_key = private_key.public_key()
     return public_key
+
+"""This function is used to generate a public key"""
+def generate_rsa_public_key(private_key, file_to_be_saved=None):
+    public_key = private_key.public_key()
+
+    if file_to_be_saved != None:
+        pem = public_key.public_bytes(encoding=serialization.Encoding.PEM,
+                                      format=serialization.PublicFormat.SubjectPublicKeyInfo)
+        file_to_be_saved_public_key = open(file_to_be_saved, 'wb')
+        file_to_be_saved_public_key.write(pem)
+        file_to_be_saved_public_key.close()
+
+    return public_key
+
+"""This function is used to generate a private key"""
+def generate_rsa_private_key(key_size, file_to_be_saved=None, password=None):
+    private_key = generate_private_key(public_exponent=65537, key_size=key_size)
+
+    if file_to_be_saved != None:
+        if password != None:
+            password = password.encode()
+            encrypt_algorithm = serialization.BestAvailableEncryption(password)
+        else:
+            encrypt_algorithm = serialization.NoEncryption()
+
+        pem = private_key.private_bytes(encoding=serialization.Encoding.PEM,
+                                        format=serialization.PrivateFormat.TraditionalOpenSSL,
+                                        encryption_algorithm=encrypt_algorithm)
+
+        file_to_be_saved_private_key = open(file_to_be_saved, 'wb')
+        file_to_be_saved_private_key.write(pem)
+        file_to_be_saved_private_key.close()
+
+    return private_key
+
+
+def generate_rsa_key_pair(key_size, file_to_be_saved=None, password=None):
+    private_key = generate_rsa_private_key(key_size, file_to_be_saved, password)
+
+    if file_to_be_saved != None:
+        file_to_be_saved = str(file_to_be_saved + ".pub")
+    public_key = generate_rsa_public_key(private_key, file_to_be_saved)
+
+    return (private_key, public_key)
+
+
+def certificate_object(certificate):
+    return x509.load_der_x509_certificate(
+        certificate,
+        default_backend()
+    )
+
+def certificate_object_from_pem(pem_data):
+    return x509.load_pem_x509_certificate(pem_data, default_backend())
+
+
+def load_certificate_from_disk(file_name):
+    with open(file_name, 'rb') as file:
+        pem_data = file.read()
+    return pem_data
+
+
+def certificate_chain(chain, cert, certificates):
+    chain.append(cert)
+
+    issuer = cert.issuer.rfc4514_string()
+    subject = cert.subject.rfc4514_string()
+
+    if issuer == subject and subject in certificates:
+        return True
+
+    if issuer in certificates:
+        return certificate_chain(chain, certificates[issuer], certificates)
+
+    return False
+
+
+def build_certificate_chain(chain, cert, certificates):
+    chain.append(cert)
+
+    issuer = cert.issuer.rfc4514_string()
+    subject = cert.subject.rfc4514_string()
+
+    if issuer == subject and subject in certificates:
+        return True
+
+    if issuer in certificates:
+        return build_certificate_chain(chain, certificates[issuer], certificates)
+
+    return False
+
+
+def validate_certificate_chain(chain):
+    error_messages = []
+    try:
+        return (validate_purpose_certificate_chain(chain,error_messages)
+                and validity_certificate_chain_validation(chain, error_messages)
+                and validate_revocation_certificate_chain_crl(chain,error_messages)
+                and validate_signatures_certificate_chain(chain, error_messages)), error_messages
+    except Exception as e:
+        error_messages.append("An error occurred while verifying the certificate chain")
+        return False, error_messages
+
+
+def validate_purpose_certificate_chain(chain, error_messages):
+    result = certificate_without_purposes(chain[0], ["key_cert_sign", "crl_sign"])
+    for i in range(1, len(chain)):
+
+        if not result:
+
+            error_messages.append("The purpose of at least one chain certificate is wrong")
+            return result
+
+        result = certificate_without_purposes(chain[i], ["digital_signature", "content_commitment", "key_encipherment", "data_encipherment"])
+
+    if not result:
+        error_messages.append("The purpose of at least one chain certificate is wrong")
+    return result
+
+
+def validity_certificate_chain_validation(chain, error_messages):
+    for cert in chain:
+        dates = (cert.not_valid_before.timestamp(), cert.not_valid_after.timestamp())
+
+        if datetime.now().timestamp() < dates[0] or datetime.now().timestamp() > dates[1]:
+            error_messages.append("One of the chain certificates isn't valid")
+            return False
+    return True
+
+
+def revoked_certificate_validation(serial_number, crl_url):
+    r = requests.get(crl_url)
+    try:
+        crl = x509.load_der_x509_crl(r.content, default_backend())
+    except ValueError as e:
+        crl = x509.load_pem_x509_crl(r.content, default_backend())
+    return crl.get_revoked_certificate_by_serial_number(serial_number) is not None
+
+
+def validate_revocation_certificate_chain_crl(chain, error_messages):
+    for i in range(1, len(chain)):
+        subject = chain[i - 1]
+        issuer = chain[i]
+        for e in issuer.extensions:
+            if isinstance(e.value, CRLDistributionPoints):
+                crl_url = e.value._distribution_points[0].full_name[0].value
+                if revoked_certificate_validation(subject.serial_number,crl_url):
+                    error_messages.append("One of the certificates is revoked")
+                    return False
+    return True
+
+
+def validate_signatures_certificate_chain(chain, error_messages):
+    for i in range(1, len(chain)):
+        try:
+            subject = chain[i - 1]
+            issuer = chain[i]
+            issuer_public_key = issuer.public_key()
+            issuer_public_key.verify(
+                subject.signature,
+                subject.tbs_certificate_bytes,
+                padding.PKCS1v15(),
+                subject.signature_hash_algorithm,
+            )
+        except InvalidSignature:
+            error_messages.append("One of the certificates isn't signed by its issuer")
+            return False
+    return True
+
+
+def certificate_without_purposes(certificate, purposes):
+    result = True
+    for purpose in purposes:
+        result &= not getattr(certificate.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE).value, purpose)
+    return result
+
+
+def verify_signature(certificate, signature, nonce):
+    try:
+        issuer_public_key = certificate.public_key()
+        issuer_public_key.verify(
+            signature,
+            nonce,
+            padding.PKCS1v15(),
+            hashes.SHA1(),
+        )
+    except InvalidSignature:
+        return False
+
+    return True
+
 
 class MediaServer(resource.Resource):
     isLeaf = True
@@ -314,12 +514,87 @@ class MediaServer(resource.Resource):
 
         #File was not open?
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-        return json.dumps({'error': symmetriccrypt.encrypt(self.secret_key, 'unknown', self.ciphers[0],
-                                                           self.ciphers[1]).decode('latin')}, indent=4).encode('latin')
+        return json.dumps({'error': encrypt(self.secret_key, 'unknown', self.ciphers[0],
+                                            self.ciphers[1]).decode('latin')}, indent=4).encode('latin')
 
     #server authenticate
-    #cliente authenticate
-    #rsa exchange
+    def client_authentication(self, request):
+        dict = request.content.read()
+        data = json.loads(dict)
+
+        server_nonce = data["server_nonce"].encode('latin')
+        server_nonce = decrypt(self.secret_key, server_nonce,
+                                                     self.ciphers[0], self.ciphers[1])
+
+        client_cc_certificate = data["client_cc_certificate"].encode('latin')
+        client_cc_certificate = decrypt(self.secret_key, client_cc_certificate,
+                                                       self.ciphers[0], self.ciphers[1])
+
+        client_cc_certificate = certificate_object(client_cc_certificate)
+        logger.debug(f"Received Client Certificate and signed Nonce")
+
+        path = "../cc_certificates"
+        certificates = {}
+
+        for filename in os.listdir(path):
+            if filename.endswith(".pem"):
+                certificate_data = load_certificate_from_disk(os.path.join(path, filename))
+                certificate = certificate_object_from_pem(certificate_data)
+                certificates[certificate.subject.rfc4514_string()] = certificate
+
+        chain = []
+        chain_completed = build_certificate_chain(chain, client_cc_certificate, certificates)
+
+        if not chain_completed:
+            logger.debug(f"Couldn't complete the certificate chain")
+            status = False
+
+        else:
+            valid_chain, error_messages = validate_certificate_chain(chain)
+
+            if not valid_chain:
+                logger.debug(error_messages)
+                status = False
+            else:
+                status = verify_signature(client_cc_certificate, server_nonce, self.nonce)
+
+        if status:
+            logger.debug(f"Client certificate chain validated and nonce signed by the client")
+            object_identifier = ObjectIdentifier("2.5.4.5")
+            self.authorized_users.append(client_cc_certificate.subject.get_attributes_for_oid(object_identifier)[0].value)
+
+            logger.debug(f"User logged in with success")
+
+        status_enc = encrypt(self.secret_key, str(status), self.client_chosen_ciphers[0],
+                                            self.client_chosen_ciphers[1]).decode('latin')
+
+        return json.dumps({
+            "status": status_enc
+        }).encode('latin')
+
+
+    def rsa_exchange(self, request):
+        private_key, public_key = generate_rsa_key_pair(2048, "rsa_key.pem")
+
+        dict = request.content.read()
+        data = json.loads(dict)
+
+        rsa_public_key = data["client_rsa_pub_key"].encode()
+        rsa_public_key = decrypt(self.secret_key, rsa_public_key, self.ciphers[0], self.ciphers[1])
+
+        file_to_be_saved_public_key = open("public_k.pem", 'wb')
+        file_to_be_saved_public_key.write(rsa_public_key)
+        file_to_be_saved_public_key.close()
+        logger.debug(f"Received Client Public RSA Key")
+
+        pubk_enc = encrypt(self.secret_key,
+                           public_key.public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode(),
+                           self.ciphers[0], self.ciphers[1]).decode('latin')
+
+        return json.dumps({
+                "server_rsa_public_key":pubk_enc
+            }).encode('latin')
+
 
     """Handle a GET request"""
     def render_GET(self, request):
