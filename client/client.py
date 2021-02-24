@@ -15,6 +15,8 @@ from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
 )
+import server
+import random
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -43,6 +45,7 @@ parameters = params_numbers.parameters(default_backend())
 SERVER_URL = 'http://127.0.0.1:8083'
 
 licenses = {}
+OID_CLIENT = ''
 
 """This function is used to initialize hmac based on the communication"""
 def start_hmac(key):
@@ -124,6 +127,161 @@ def decrypt_data(data):
 
 # activesession é usado para ver se ja temos alguma sessao ja aberta ou nao
 activesession = False
+def cryptography():
+    #diffie helman
+    req = requests.get(f'{Server_URL}/api/dh-parameters')
+    if req.status_code == 200:
+        print("Got dh-parameters")
+    dh_param = req.json()
+    #Get the private key and the number y
+    dh_private_k = server.diffie_hellman_generate_private_key(dh_param)
+    dh_public_num = server.diffie_hellman_generate_public_key(dh_private_k)
+
+    #getting the server public number
+    req = requests.post(f'{SERVER_URL}/api/dh-handshake', data=json.dumps([dh_public_num]).encode('latin'))   
+    if req.status_code == 200:
+        print("Got server public number")
+    server_public_number_y = req.json()[0]
+
+    #Calculate secret key to encrypt com
+    secret_key = server.diffie_hellman_common_secret(dh_private_k,server_public_number_y)
+    print("Got the key to encrypt communication")
+
+    #Negotiate a cipher suite
+    if req.status_code == 200:
+        print("Got ciphers list")
+    cipher_list = req.json()
+    cipher_list[0] = random.choice(cipher_list[0]) # Algorithm
+    else:
+        cipher_list[1] = random.choice(cipher_list[1]) #Cipher
+    cipher_list[2] = random.choice(cipher_list[2]) #Digest
+    print(f"chosen ciphers:\n\tAlgorithm: {cipher_list[0]}\n\tCipher Mode: {cipher_list[1]}\n\tHash Function: {cipher_list[2]}")
+
+    #Comunicate chosen cyphers to server
+    req = requests.post(f'{SERVER_URL}/api/chosen-ciphers', data=json.dumps(cipher_list).encode('latin'))   
+    if req.status_code == 200:
+        print("Got server encrypted message")
+    message = req.json()
+    message = message["data"].encode('latin')
+    #decrypt message
+    message = symmetriccrypt.decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
+    print(f"server message:  {message}")
+    return dh_param,dh_private_k,secret_key,cipher_list
+
+    def authentication():
+        global OID_CLIENT
+        client_nonce = os.urandom(64)
+        encripted_client_nonce = server.encrypt(secret_key,client_nonce,
+        cipher_list[0],cipher_list[1]).decode('latin')
+
+        req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps(
+            {"nonce":encripted_client_nonce}
+        ).encode())
+        if request.status_code = 200:
+            print("Received Certificated and Signed Nonce")
+
+        data = req.json() #Validate the server certificate 
+
+        #decrypt the data
+        server_nonce = data["server_nonce"].encode('latin')
+        server_nonce = server.decrypt(secret_key,server_nonce,
+        cipher_list[0],cipher_list[1])
+        signed_client_nonce = data["signed_client_nonce"].encode('latin')
+        signed_client_nonce = server.decrypt(secret_key,signed_client_nonce,cipher_list[0],cipher_list[1])
+        server_cert = data["server_cert"].encode('latin')
+        server_cert = server.decrypt(secret_key,server_cert,cipher_list[0],cipher_list[1])
+
+        server_cert = server.certif # Por fazer
+
+        cert_data = server.load...
+
+        cert ...
+
+        certificates = {}
+        certificates[cert.subject.rfc4514_string()] = cert
+
+        chain = []
+
+        chain_completed = ....
+
+        if not chain_completed:
+            print(" Certificated Chain is not completed")
+            return False
+
+        else:
+            complete_Chain,error = server.val.....
+
+            if not complete_Chain:
+                print(error)
+                return False
+            else:
+                if not server...Validate
+                    return False
+        print("SUCESS..Validated the server certicate chain and nonce signed by the server ")
+        # Parte do Cartão de cidadão --->send cc info
+    """session_success, session_data = utils.cc_session()
+
+    if not session_success:
+        print("Error establishing a new citizen card session: {session_data}")
+        return False
+    print("Citizen Card Session Open")
+    client_cert = utils.certificate_cc(session_data)
+    
+
+    
+    #encrypt client certs
+    client_cert_enc = symmetriccrypt.encrypt(secret_key, client_cert, cipher_list[0], cipher_list[1]).decode('latin')
+    signed_server_nonce = utils.sign_nonce_cc(session_data, server_nonce)
+    signed_server_nonce_enc = symmetriccrypt.encrypt(secret_key, signed_server_nonce, cipher_list[0], cipher_list[1]).decode('latin')
+    
+    client_certs = {}
+    client_certs["client_cc_certificate"] = client_cert_enc
+    client_certs["signed_server_nonce"] = signed_server_nonce_enc
+
+    #finalize auth
+    req = requests.post(f'{SERVER_URL}/api/client_auth', data=json.dumps(client_certs).encode())
+    if req.status_code == 200:
+       print("Server finished citizen card certificatcion chain")
+    
+    data = req.json()
+    status = symmetriccrypt.decrypt(secret_key, data["status"], cipher_list[0], cipher_list[1])
+    if  status.decode() == "True":
+        print("Sucessfully authenticated CC")
+        oid = ObjectIdentifier("2.5.4.5")
+        CLIENT_OID = utils.certificate_object(client_cert).subject.get_attributes_for_oid(oid)[0].value
+        return True
+    else:
+        print("Could not authenticated CC")
+        return False
+
+    """
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def main():
@@ -147,9 +305,9 @@ def main():
             """Receive a user ID"""
             cookies['session_id'] = posting.text
 
-            algorithms = ['AES', 'SEED', 'CAST5', 'TripleDES']
-            modes = ['CFB', 'CTR', 'OFB']
-            diges = ['SHA256', 'SHA512', 'SHA3256', 'SHA3512']
+            algorithms = ['AES',  'TripleDES']
+            modes = ['ECB','CFB', 'CTR', 'OFB']
+            diges = ['SHA256', 'SHA512', 'SHA3256']
             code = 0
 
             for alg in algorithms:
