@@ -285,8 +285,7 @@ class MediaServer(resource.Resource):
 
     """Handle a GET request"""
     def render_GET(self, request):
-        #who = request.received_cookies["session_id".encode('latin')].decode('latin')
-        logger.debug(f'{who} : Received request for {request.uri}')
+        logger.debug(f'Received request for {request.uri}')
 
         try:
             if request.path == b'/api/list':
