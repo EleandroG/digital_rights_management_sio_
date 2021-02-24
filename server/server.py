@@ -25,30 +25,28 @@ from cryptography.hazmat.primitives.ciphers import (
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, hmac
 
-
 logger = logging.getLogger('root')
 FORMAT = "[%(filename)s:%(lineno)s - %(funcName)20s() ] %(message)s"
 logging.basicConfig(format=FORMAT)
 logger.setLevel(logging.DEBUG)
 
-
-CATALOG = { '898a08080d1840793122b7e118b27a95d117ebce':
-            {
-                'name': 'Sunny Afternoon - Upbeat Ukulele Background Music',
-                'album': 'Upbeat Ukulele Background Music',
-                'description': 'Nicolai Heidlas Music: http://soundcloud.com/nicolai-heidlas',
-                'duration': 3*60+33,
-                'file_name': '898a08080d1840793122b7e118b27a95d117ebce.mp3',
-                'file_size': 3407202
-            }
-        }
+CATALOG = {'898a08080d1840793122b7e118b27a95d117ebce':
+    {
+        'name': 'Sunny Afternoon - Upbeat Ukulele Background Music',
+        'album': 'Upbeat Ukulele Background Music',
+        'description': 'Nicolai Heidlas Music: http://soundcloud.com/nicolai-heidlas',
+        'duration': 3 * 60 + 33,
+        'file_name': '898a08080d1840793122b7e118b27a95d117ebce.mp3',
+        'file_size': 3407202
+    }
+}
 
 CATALOG_BASE = 'catalog'
 CHUNK_SIZE = 1024 * 4
 
 algs = ['AES', '3DES']
 mods = ['ECB', 'CFB', 'OFB']
-digest_algorithm =['SHA256', 'SHA512', 'SHA3256']
+digest_algorithms = ['SHA256', 'SHA512', 'SHA3256']
 
 ciphers = {}
 dKey = {}
@@ -57,6 +55,8 @@ users = []
 CSUIT = {}
 
 """ """
+
+
 def generate_key(algorithm, salt):
     password = getpass()
     password = password.encode()
@@ -66,14 +66,17 @@ def generate_key(algorithm, salt):
     else:
         length = 24
 
-    pbkdf = PBKDF2HMAC(salt=salt, algorithm=hashes.SHA256(), iterations=10**5, length=length,
-        backend=default_backend()
-    )
+    pbkdf = PBKDF2HMAC(salt=salt, algorithm=hashes.SHA256(), iterations=10 ** 5, length=length,
+                       backend=default_backend()
+                       )
 
     key = pbkdf.derive(password)
     return key
 
+
 """This function is used to encrypt the data"""
+
+
 def encrypt(algorithm, cipherMode, file_to_be_encrypted, file_to_be_saved):
     salt = os.urandom(16)
     key = generate_key(algorithm, salt)
@@ -122,13 +125,14 @@ def encrypt(algorithm, cipherMode, file_to_be_encrypted, file_to_be_saved):
         saved_file.close()
 
 
-
 """This function is used to decrypt the data"""
+
+
 def decrypt(algorithm, cipherMode, file_to_be_decrypted, file_to_be_saved):
     decrypted_file = open(file_to_be_decrypted, 'rb')
     saved_file = open(file_to_be_saved, 'w')
 
-    salt = file_to_be_decrypted.read(math.ceil(16 / 3) * 4)
+    salt = decrypted_file.read(math.ceil(16 / 3) * 4)
     salt = b64decode(salt)
     key = generate_key(algorithm, salt)
 
@@ -149,41 +153,64 @@ def decrypt(algorithm, cipherMode, file_to_be_decrypted, file_to_be_saved):
 
     cipher = Cipher(algorithm, cipher_mode)
     decryptor = cipher.decryptor()
-    nextBlock = b64decode(file_to_be_decrypted.read(math.ceil(block_size / 3) * 4))
+    next_block = b64decode(decrypted_file.read(math.ceil(block_size / 3) * 4))
 
     while True:
-        block = nextBlock
-        nextBlock = b64decode(file_to_be_decrypted.read(math.ceil(block_size / 3) * 4))
+        block = next_block
+        next_block = b64decode(decrypted_file.read(math.ceil(block_size / 3) * 4))
         block = decryptor.update(block)
-        if nextBlock == b"":
+        if next_block == b"":
             break
-        file_to_be_saved.write(block.decode())
+        saved_file.write(block.decode())
 
-        file_to_be_decrypted.close()
-        file_to_be_saved.close()
+    saved_file.write(block.decode())
+    decrypted_file.close()
+    saved_file.close()
 
-def diffie_helman_parameters(key=2048):
+
+def diffie_hellman_parameters(key=2048):
     parameters = dh.generate_parameters(generator=2, key_size=key)
     return parameters
 
+
+def diffie_hellman_common_secret(peer_public_key, private_key):
+    shared_key = private_key.exchange(peer_public_key)
+    derived_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'handshake data').derive(shared_key)
+    return derived_key
+
+
+def diffie_hellman_generate_private_key(parameters):
+    # Generate a private key for use in the exchange.
+    private_key = parameters.generate_private_key()
+    return private_key
+
+
+####################################################################################################
+
+def diffie_hellman_generate_public_key(private_key):
+    public_key = private_key.public_key()
+    return public_key
+
+
+# TESTE
 
 class MediaServer(resource.Resource):
     isLeaf = True
 
     def __init__(self):
-        self.diffie_helman_parameters = None
-        self.diffie_helman_private_key = None
+        self.diffie_hellman_parameters = None
+        self.diffie_hellman_private_key = None
         self.secret_key = None
         self.ciphers = None
         self.nonce = None
         self.users = []
 
-    #Send the list of media files to clients
+    # Send the list of media files to clients
     def do_list(self, request, who):
 
-        #object identifier OID
-        #auth = request.getHeader('Authorization')
-        #if not auth:
+        # object identifier OID
+        # auth = request.getHeader('Authorization')
+        # if not auth:
         #    request.setResponseCode(401)
         #    return 'Not authorized'
 
@@ -197,45 +224,45 @@ class MediaServer(resource.Resource):
                 'description': media['description'],
                 'chunks': math.ceil(media['file_size'] / CHUNK_SIZE),
                 'duration': media['duration']
-                })
+            })
 
-        #Return list to client
+        # Return list to client
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
         return json.dumps(media_list, indent=4).encode('latin')
 
-    #Send a media chunk to the client
-    def do_download(self, request,who):
-      #Object identifier
+    # Send a media chunk to the client
+    def do_download(self, request, who):
+        # Object identifier
 
         logger.debug(f'Download: args: {request.args}')
 
         media_id = request.args.get(b'id', [None])[0]
         logger.debug(f'Download: id: {media_id}')
 
-        #Check if the media_id is not None as it is required
+        # Check if the media_id is not None as it is required
         if media_id is None:
             request.setResponseCode(400)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps({'error': 'invalid media id'}).encode('latin')
 
-        #Convert bytes to str
+        # Convert bytes to str
         media_id = media_id.decode('latin')
 
-        #Search media_id in the catalog
+        # Search media_id in the catalog
         if media_id not in CATALOG:
             request.setResponseCode(404)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps({'error': 'media file not found'}).encode('latin')
 
-        #Get the media item
+        # Get the media item
         media_item = CATALOG[media_id]
 
-        #Check if a chunk is valid
+        # Check if a chunk is valid
         chunk_id = request.args.get(b'chunk', [b'0'])[0]
         valid_chunk = False
         try:
             chunk_id = int(chunk_id.decode('latin'))
-            if chunk_id >= 0 and chunk_id  < math.ceil(media_item['file_size'] / CHUNK_SIZE):
+            if chunk_id >= 0 and chunk_id < math.ceil(media_item['file_size'] / CHUNK_SIZE):
                 valid_chunk = True
         except:
             logger.warn("Chunk format is invalid")
@@ -245,45 +272,46 @@ class MediaServer(resource.Resource):
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps({'error': 'invalid chunk id'}).encode('latin')
 
-        #if(who not in readings.keys()):
+        # if(who not in readings.keys()):
         #    readings[who] = {media_id:0}
-        #elif(media_id not in readings[who].keys()):
+        # elif(media_id not in readings[who].keys()):
         #    readings[who][media_id] = 0
 
-        #logger.debug(f'Download: chunk: {chunk_id} - readingsByChunk: {math.ceil((readings[who][media_id]*100) / media_item["file_size"])/100} ')
+        # logger.debug(f'Download: chunk: {chunk_id} - readingsByChunk: {math.ceil((readings[who][media_id]*100) / media_item["file_size"])/100} ')
 
         logger.debug(f'Download: chunk: {chunk_id}')
 
         offset = chunk_id * CHUNK_SIZE
 
-        #readings[who][media_id] += CHUNK_SIZE
+        # readings[who][media_id] += CHUNK_SIZE
 
-        #Open file, seek to correct position and return the chunk
+        # Open file, seek to correct position and return the chunk
         with open(os.path.join(CATALOG_BASE, media_item['file_name']), 'rb') as f:
             f.seek(offset)
             data = f.read(CHUNK_SIZE)
 
-            #signature!  a ir buscar os rsa's
+            # signature!  a ir buscar os rsa's
 
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps(
-                    {
-                        'media_id': media_id,
-                        'chunk': chunk_id,
-                        'data': binascii.b2a_base64(data).decode('latin').strip()
-                        #data signature
-                    },indent=4
-                ).encode('latin')
+                {
+                    'media_id': media_id,
+                    'chunk': chunk_id,
+                    'data': binascii.b2a_base64(data).decode('latin').strip()
+                    # data signature
+                }, indent=4
+            ).encode('latin')
 
-        #File was not open?
+        # File was not open?
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-        return encrypt_data(json.dumps({'error': 'unknown'}, indent=4),who)
+        return encrypt_data(json.dumps({'error': 'unknown'}, indent=4), who)
 
-    #server authenticate
-    #cliente authenticate
-    #rsa exchange
+    # server authenticate
+    # cliente authenticate
+    # rsa exchange
 
     """Handle a GET request"""
+
     def render_GET(self, request):
         logger.debug(f'Received request for {request.uri}')
 
@@ -293,6 +321,21 @@ class MediaServer(resource.Resource):
 
             elif request.path == b'/api/download':
                 return self.do_download(request)
+
+            elif request.path == b'/api/dh-parameters':
+                dh_parameters = diffie_hellman_parameters()
+                self.diffie_hellman_parameters = dh_parameters
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps(dh_parameters, indent=4).encode('latin')
+
+            elif request.path == b'/api/protocols':
+                return self.do_get_protocols(request)
+
+            elif request.path == b'/api/cipher-suite':
+                list_of_ciphers = [algs, mods, digest_algorithms]
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps(list_of_ciphers, indent=4).encode('latin')
+
             else:
                 request.responseHeaders.addRawHeader(b"content-type", b'text/plain')
                 return b'Methods: /api/list /api/download'
@@ -304,107 +347,36 @@ class MediaServer(resource.Resource):
             return b''
 
     """Handle a POST request"""
+
     def render_POST(self, request):
-        global users
-        global CSUIT
-        global keys
-        global ciphers
-        global digests
-        global dkey
-
-        who = request.received_cookies["session_id".encode('latin')].decode('latin')
-        logger.debug(f'{who} : Received POST for {request.uri}')
+        logger.debug(f'Received POST for {request.uri}')
         try:
-            if request.path == b'/api/csuit':
-                vars = (request.content.getvalue().decode('latin')).split("_")
-                if vars[0] in algs and vars[1] in mods and vars[2] in digest_algorithm:
-                    request.setResponseCode(200)
-                    CSUIT[who] = request.content.getvalue().decode('latin')
-                    return b''
-                else:
-                    request.setResponseCode(201)
-                    return b''
 
-            elif request.path == b'/api/ok':
-                logger.debug(f'{who} : Received {decrypt_data(request.content.getvalue(),who)}')
-                return encrypt_data("NO",who)
+            # server auth
+            # client auth
+            # rsa exchange
 
-            elif request.path == b'/api/diffiehellman':
-                """Generate a private key for use in the exchange"""
-                private_key = parameters.generate_private_key()
-                public_key = private_key.public_key()
-                peer_public_key = serialization.load_pem_public_key(
-                    request.content.getvalue())
-                pem = public_key.public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo)
-                shared_key = private_key.exchange(peer_public_key)
-                """Key derivation"""
-                derived_key = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=96,
-                    salt=None,
-                    info=b'handshake data').derive(shared_key)
+            if request.path == b'/api/dh-handshake':
+                """Generate a private key, a public key and public number of client"""
+                public_number_of_client = json.loads(request.content.read())[0]
+                self.diffie_hellman_private_key = diffie_hellman_generate_private_key(self.diffie_hellman_parameters)
+                diffie_hellman_public_number = diffie_hellman_generate_public_key(self.diffie_hellman_private_key)
+                self.secret_key = diffie_hellman_common_secret(self.diffie_hellman_private_key, public_number_of_client)
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps([diffie_hellman_public_number], indent=4).encode('latin')
 
-                key1 = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=16,
-                    salt=None,
-                    info=b'handshake data').derive(derived_key[0:31])
-
-                key2 = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=16,
-                    salt=None,
-                    info=b'handshake data').derive(derived_key[32:63])
-
-                key3 = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=16,
-                    salt=None,
-                    info=b'handshake data').derive(derived_key[64:95])
-
-                dKey[who] = HKDF(
-                    algorithm=hashes.SHA256(),
-                    length=16,
-                    salt=None,
-                    info=b'handshake data').derive(key1+key2+key3)
-
-                alg, mod, dige = CSUIT[who].split("_")
-                blocksize = 16*8
-                if (alg == 'AES'):
-                    blocksize = algorithms.AES.block_size
-                elif (alg == 'SEED'):
-                    blocksize = algorithms.SEED.block_size
-                elif (alg == 'CAST5'):
-                    blocksize = algorithms.CAST5.block_size
-                elif (alg == 'TripleDES'):
-                    blocksize = algorithms.TripleDES.block_size
-
-
-                iv1 = os.urandom(int(blocksize/8))
-                iv2 = os.urandom(int(blocksize/8))
-                cf1 = cipher(key1,iv1,who)
-                cf2 = cipher(key2,iv2,who)
-                cf3 = start_hmac(key3,who)
-                ciphers[who] = [cf1,cf2,cf3]
-                return json.dumps({'pem':pem.decode('latin'),'ivs':[iv1.decode('latin'),iv2.decode('latin')]}, indent=4).encode('latin')
-
-            elif request.path == b'/api/bye':
-                if decrypt_data(request.content.getvalue(),who) == "encrypted bye message":
-                    users.remove(who)
-                    return b"bye"
-                return b"No"
-
-            elif request.path == b'/api/hello':
-
-                if(who in users):
-                    return b"hello"
-                who = os.urandom(16)
-                while(who.decode('latin') in users):
-                    who = os.urandom(16)
-                users += [who.decode('latin')]
-                return who
+            elif request.path == b'/api/chosen-ciphers':
+                """Generate a client public key"""
+                self.ciphers = json.loads(request.content.read())
+                print(self.ciphers)
+                message = "The Cryptography Pattern was established"
+                message = encrypt(self.secret_key, message, self.ciphers[0], self.ciphers[1])
+                print(message)
+                message = message.decode('latin')
+                print(message)
+                print(type(message))
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps({"data": message}, indent=4).encode('latin')
 
             else:
                 request.responseHeaders.addRawHeader(b"content-type", b'text/plain')
@@ -416,9 +388,10 @@ class MediaServer(resource.Resource):
             request.responseHeaders.addRawHeader(b"content-type", b"text/plain")
             return b''
 
+
 print("Server started")
 print("URL is: http://IP:8083")
 
 s = server.Site(MediaServer())
-reactor.listenTCP(8083, s)
+reactor.listenTCP(8080, s)
 reactor.run()
