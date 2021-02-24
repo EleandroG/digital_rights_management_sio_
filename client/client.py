@@ -36,11 +36,11 @@ CSUIT = ""
 ciphers = []
 dKey = b""
 
-"""Parameters"""
-p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
-g = 2
-params_numbers = dh.DHParameterNumbers(p, g)
-parameters = params_numbers.parameters(default_backend())
+#"""Parameters"""
+#p = 0xFFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E088A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE649286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF6955817183995497CEA956AE515D2261898FA051015728E5A8AACAA68FFFFFFFFFFFFFFFF
+#g = 2
+#params_numbers = dh.DHParameterNumbers(p, g)
+#parameters = params_numbers.parameters(default_backend())
 
 SERVER_URL = 'http://127.0.0.1:8083'
 
@@ -144,7 +144,7 @@ def cryptography():
     server_public_number_y = req.json()[0]
 
     #Calculate secret key to encrypt com
-    secret_key = server.diffie_hellman_common_secret(dh_private_k,server_public_number_y)
+    secret_key = server.diffie_hellman_common_secret(dh_private_k, server_public_number_y)
     print("Got the key to encrypt communication")
 
     #Negotiate a cipher suite
@@ -152,8 +152,7 @@ def cryptography():
         print("Got ciphers list")
     cipher_list = req.json()
     cipher_list[0] = random.choice(cipher_list[0]) # Algorithm
-    else:
-        cipher_list[1] = random.choice(cipher_list[1]) #Cipher
+    cipher_list[1] = random.choice(cipher_list[1]) #Cipher
     cipher_list[2] = random.choice(cipher_list[2]) #Digest
     print(f"chosen ciphers:\n\tAlgorithm: {cipher_list[0]}\n\tCipher Mode: {cipher_list[1]}\n\tHash Function: {cipher_list[2]}")
 
@@ -164,61 +163,61 @@ def cryptography():
     message = req.json()
     message = message["data"].encode('latin')
     #decrypt message
-    message = symmetriccrypt.decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
+    message = decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
     print(f"server message:  {message}")
     return dh_param,dh_private_k,secret_key,cipher_list
 
-    def authentication():
-        global OID_CLIENT
-        client_nonce = os.urandom(64)
-        encripted_client_nonce = server.encrypt(secret_key,client_nonce,
-        cipher_list[0],cipher_list[1]).decode('latin')
+def authentication():
+    global OID_CLIENT
+    client_nonce = os.urandom(64)
+    encripted_client_nonce = server.encrypt(secret_key,client_nonce,
+    cipher_list[0],cipher_list[1]).decode('latin')
 
-        req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps(
-            {"nonce":encripted_client_nonce}
-        ).encode())
-        if request.status_code = 200:
-            print("Received Certificated and Signed Nonce")
+    req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps(
+        {"nonce":encripted_client_nonce}
+    ).encode())
+    if request.status_code = 200:
+        print("Received Certificated and Signed Nonce")
 
-        data = req.json() #Validate the server certificate 
+    data = req.json() #Validate the server certificate
 
-        #decrypt the data
-        server_nonce = data["server_nonce"].encode('latin')
-        server_nonce = server.decrypt(secret_key,server_nonce,
-        cipher_list[0],cipher_list[1])
-        signed_client_nonce = data["signed_client_nonce"].encode('latin')
-        signed_client_nonce = server.decrypt(secret_key,signed_client_nonce,cipher_list[0],cipher_list[1])
-        server_cert = data["server_cert"].encode('latin')
-        server_cert = server.decrypt(secret_key,server_cert,cipher_list[0],cipher_list[1])
+    #decrypt the data
+    server_nonce = data["server_nonce"].encode('latin')
+    server_nonce = server.decrypt(secret_key,server_nonce,
+    cipher_list[0],cipher_list[1])
+    signed_client_nonce = data["signed_client_nonce"].encode('latin')
+    signed_client_nonce = server.decrypt(secret_key,signed_client_nonce,cipher_list[0],cipher_list[1])
+    server_cert = data["server_cert"].encode('latin')
+    server_cert = server.decrypt(secret_key,server_cert,cipher_list[0],cipher_list[1])
 
-        server_cert = server.certif # Por fazer
+    server_cert = server.certif # Por fazer
 
-        cert_data = server.load...
+    cert_data = server.load...
 
-        cert ...
+    cert ...
 
-        certificates = {}
-        certificates[cert.subject.rfc4514_string()] = cert
+    certificates = {}
+    certificates[cert.subject.rfc4514_string()] = cert
 
-        chain = []
+    chain = []
 
-        chain_completed = ....
+    chain_completed = ....
 
-        if not chain_completed:
-            print(" Certificated Chain is not completed")
+    if not chain_completed:
+        print(" Certificated Chain is not completed")
+        return False
+
+    else:
+        complete_Chain,error = server.val.....
+
+        if not complete_Chain:
+            print(error)
             return False
-
         else:
-            complete_Chain,error = server.val.....
-
-            if not complete_Chain:
-                print(error)
+            if not server...Validate
                 return False
-            else:
-                if not server...Validate
-                    return False
-        print("SUCESS..Validated the server certicate chain and nonce signed by the server ")
-        # Parte do Cartão de cidadão --->send cc info
+    print("SUCESS..Validated the server certicate chain and nonce signed by the server ")
+    # Parte do Cartão de cidadão --->send cc info
     """session_success, session_data = utils.cc_session()
 
     if not session_success:

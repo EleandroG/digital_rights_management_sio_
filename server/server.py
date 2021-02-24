@@ -4,6 +4,7 @@
 83069 - Eleandro Laureano
 78444 - Nuno Matamba
 """
+
 from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 from twisted.web import server, resource
 from twisted.internet import reactor, defer
@@ -307,7 +308,7 @@ def validate_purpose_certificate_chain(chain, error_messages):
         result = certificate_without_purposes(chain[i], ["digital_signature", "content_commitment", "key_encipherment", "data_encipherment"])
 
     if not result:
-        error_messages.append("The purpose of at least one chain certificate is wrong")
+        error_messages.append("The purpose of at least one chain certificate is not correct")
     return result
 
 
@@ -316,7 +317,7 @@ def validity_certificate_chain_validation(chain, error_messages):
         dates = (cert.not_valid_before.timestamp(), cert.not_valid_after.timestamp())
 
         if datetime.now().timestamp() < dates[0] or datetime.now().timestamp() > dates[1]:
-            error_messages.append("One of the chain certificates isn't valid")
+            error_messages.append("One of the chain certificates is not valid")
             return False
     return True
 
