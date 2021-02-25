@@ -72,6 +72,19 @@ def load_cert_from_disk(file_name):
 
     return pem_data
 
+def load_private_key_file(path):
+    with open(path, "rb") as key_file:
+        pem = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+        return pem
+
+
+def sign_with_pk(pk, nonce):
+    return pk.sign(nonce, padding.PKCS1v15(), hashes.SHA1())
+
 
 def build_certificate_chain(chain, cert, certificates):
     chain.append(cert)
@@ -101,7 +114,7 @@ def validate_certificate_chain(chain):
 
 
 def validate_purpose_certificate_chain(chain, error_messages):
-    result = certificate_does_not_have_purposes(chain[0], ["key_cert_sign", "crl_sign"])
+    result = certificate_without_purposes(chain[0], ["key_cert_sign", "crl_sign"])
     for i in range(1, len(chain)):
         
         if not result:
@@ -109,7 +122,7 @@ def validate_purpose_certificate_chain(chain, error_messages):
             error_messages.append("The purpose of at least one chain certificate is wrong")
             return result
        
-        result = certificate_does_not_have_purposes(chain[i], ["digital_signature", "content_commitment", "key_encipherment", "data_encipherment"])
+        result = certificate_without_purposes(chain[i], ["digital_signature", "content_commitment", "key_encipherment", "data_encipherment"])
 
     if not result:
         error_messages.append("The purpose of at least one chain certificate is wrong")
@@ -148,7 +161,6 @@ def validate_revocation_certificate_chain_crl(chain, error_messages):
     return True
 
 
-
 def validate_signatures_certificate_chain(chain, error_messages):
     for i in range(1, len(chain)):
         try:
@@ -167,20 +179,8 @@ def validate_signatures_certificate_chain(chain, error_messages):
     return True
 
 
-def certificate_does_not_have_purposes(certificate, purposes):
+def certificate_without_purposes(certificate, purposes):
     result = True
     for purpose in purposes:
         result &= not getattr(certificate.extensions.get_extension_for_oid(ExtensionOID.KEY_USAGE).value, purpose)
     return result
-
-def load_private_key_file(path):
-    with open(path, "rb") as key_file:
-        pem = serialization.load_pem_private_key(
-            key_file.read(),
-            password=None,
-            backend=default_backend()
-        )
-        return pem
-
-def sign_with_pk(pk, nonce):
-    return pk.sign(nonce, padding.PKCS1v15(), hashes.SHA1())

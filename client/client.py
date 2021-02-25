@@ -13,9 +13,9 @@ import time
 import sys
 sys.path.append(os.path.abspath('../utils'))
 import utils
-import rsa_utils
-import diffiehellman
-import symmetriccrypt
+import rsa
+import diffie_hellman
+import secure
 
 from cryptography.hazmat.primitives.asymmetric import dh
 from cryptography.hazmat.primitives.ciphers import (
@@ -70,17 +70,13 @@ def cipher(key, iv):
     alg, modo, dige = CSUIT.split("_")
     if (modo == 'CFB'):
         mode = modes.CFB(iv)
-    elif (modo == 'CTR'):
-        mode = modes.CTR(iv)
+    elif (modo == 'ECB'):
+        mode = modes.ECB(iv)
     elif (modo == 'OFB'):
         mode = modes.OFB(iv)
     if (alg == 'AES'):
         algorithm = algorithms.AES(key)
-    elif (alg == 'SEED'):
-        algorithm = algorithms.SEED(key)
-    elif (alg == 'CAST5'):
-        algorithm = algorithms.CAST5(key)
-    elif (alg == 'TripleDES'):
+    elif (alg == '3DES'):
         algorithm = algorithms.TripleDES(key)
 
     cifra = Cipher(algorithm, mode)
@@ -119,7 +115,7 @@ def decrypt_data(data):
     return decrypted.decode('latin')
 
 
-# activesession é usado para ver se ja temos alguma sessao ja aberta ou nao
+#activesession é usado para ver se ja temos alguma sessao ja aberta ou nao
 activesession = False
 def cryptography():
     #diffie helman
@@ -128,8 +124,8 @@ def cryptography():
         print("Got dh-parameters")
     dh_parameters = req.json()
     #Get the private key and the number y
-    dh_private_k = diffiehellman.diffie_hellman_generate_private_key(dh_parameters)
-    dh_public_num = diffiehellman.diffie_hellman_generate_public_key(dh_private_k)
+    dh_private_k = diffie_hellman.diffie_hellman_generate_private_key(dh_parameters)
+    dh_public_num = diffie_hellman.diffie_hellman_generate_public_key(dh_private_k)
 
     #getting the server public number
     req = requests.post(f'{SERVER_URL}/api/dh-handshake', data=json.dumps([dh_public_num]).encode('latin'))
@@ -138,7 +134,7 @@ def cryptography():
     server_public_number_y = req.json()[0]
 
     #Calculate secret key to encrypt com
-    secret_key = diffiehellman.diffie_hellman_common_secret(dh_private_k, server_public_number_y)
+    secret_key = diffie_hellman.diffie_hellman_common_secret(dh_private_k, server_public_number_y)
     print("Got the key to encrypt communication")
 
     #Negotiate a cipher suite
@@ -159,14 +155,15 @@ def cryptography():
     message = req.json()
     message = message["data"].encode('latin')
     #decrypt message
-    message = symmetriccrypt.decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
+    message = secure.decrypt(secret_key,message,cipher_list[0], cipher_list[1]).decode()
     print(f"server message:  {message}")
     return dh_parameters,dh_private_k,secret_key,cipher_list
 
 def authentication():
     global OID_CLIENT
+
     client_nonce = os.urandom(64)
-    encripted_client_nonce = symmetriccrypt.encrypt(secret_key,client_nonce,
+    encripted_client_nonce = secure.encrypt(secret_key,client_nonce,
     cipher_list[0],cipher_list[1]).decode('latin')
 
     req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps(
@@ -179,12 +176,12 @@ def authentication():
 
     #decrypt the data
     server_nonce = data["server_nonce"].encode('latin')
-    server_nonce = symmetriccrypt.decrypt(secret_key,server_nonce,
+    server_nonce = secure.decrypt(secret_key,server_nonce,
     cipher_list[0],cipher_list[1])
     signed_client_nonce = data["signed_client_nonce"].encode('latin')
-    signed_client_nonce = symmetriccrypt.decrypt(secret_key,signed_client_nonce,cipher_list[0],cipher_list[1])
+    signed_client_nonce = secure.decrypt(secret_key,signed_client_nonce,cipher_list[0],cipher_list[1])
     server_cert = data["server_certificate"].encode('latin')
-    server_cert = symmetriccrypt.decrypt(secret_key,server_cert,cipher_list[0],cipher_list[1])
+    server_cert = secure.decrypt(secret_key,server_cert,cipher_list[0],cipher_list[1])
 
     server_cert = utils.certificate_object_from_pem(server_cert)
 
@@ -212,47 +209,11 @@ def authentication():
             if not utils.verify_signature(server_cert,signed_client_nonce,client_nonce):
                 return False
     print("SUCESS..Validated the server certicate chain and nonce signed by the server ")
-    # Parte do Cartão de cidadão --->send cc info
-    """session_success, session_data = utils.cc_session()
 
-    if not session_success:
-        print("Error establishing a new citizen card session: {session_data}")
-        return False
-    print("Citizen Card Session Open")
-    client_cert = utils.certificate_cc(session_data)
-    
-
-    
-    #encrypt client certs
-    client_cert_enc = symmetriccrypt.encrypt(secret_key, client_cert, cipher_list[0], cipher_list[1]).decode('latin')
-    signed_server_nonce = utils.sign_nonce_cc(session_data, server_nonce)
-    signed_server_nonce_enc = symmetriccrypt.encrypt(secret_key, signed_server_nonce, cipher_list[0], cipher_list[1]).decode('latin')
-    
-    client_certs = {}
-    client_certs["client_cc_certificate"] = client_cert_enc
-    client_certs["signed_server_nonce"] = signed_server_nonce_enc
-
-    #finalize auth
-    req = requests.post(f'{SERVER_URL}/api/client_auth', data=json.dumps(client_certs).encode())
-    if req.status_code == 200:
-       print("Server finished citizen card certificatcion chain")
-    
-    data = req.json()
-    status = symmetriccrypt.decrypt(secret_key, data["status"], cipher_list[0], cipher_list[1])
-    if  status.decode() == "True":
-        print("Sucessfully authenticated CC")
-        oid = ObjectIdentifier("2.5.4.5")
-        CLIENT_OID = utils.certificate_object(client_cert).subject.get_attributes_for_oid(oid)[0].value
-        return True
-    else:
-        print("Could not authenticated CC")
-        return False
-
-    """
 def rsa_exchange():
-    private_key,public_key = rsa_utils.generate_rsa_key_pair(2048, "../rsa_keys/cliente.pem")
+    private_key,public_key = rsa.generate_rsa_key_pair(2048, "../rsa_keys/cliente.pem")
 
-    pubk_enc = symmetriccrypt.encrypt(secret_key,
+    pubk_enc = secure.encrypt(secret_key,
         public_key.public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode(),
         cipher_list[0],
         cipher_list[1]
@@ -270,28 +231,13 @@ def rsa_exchange():
     data = req.json()
 
     server_rsa_public_key = data["server_rsa_public_key"].encode()
-    server_rsa_public_key = symmetriccrypt.decrypt(secret_key,server_rsa_public_key,
+    server_rsa_public_key = secure.decrypt(secret_key,server_rsa_public_key,
     cipher_list[0],cipher_list[1])
 
     fileToSave_public_key = open("../rsa_keys/server_rsa_pub_key.pub", 'wb')
     fileToSave_public_key.write(server_rsa_public_key)
     fileToSave_public_key.close()
 
-
-def rsa_verify(public_key, message, signature):
-    #message = message.encode()
-    try:
-        public_key.verify(signature,
-                      message,
-                      padding.PSS(mgf=padding.MGF1(hashes.SHA384()),
-                                  salt_length=padding.PSS.MAX_LENGTH),
-                      hashes.SHA384())
-    except:
-        #print("invalid signature")
-        return False
-    else:
-        #print("valid signature")
-        return True
 
 def main():
     print("|--------------------------------------|")
@@ -303,7 +249,7 @@ def main():
     global CSUIT
     global dKey
 
-    # Get a list of media files
+    #Get a list of media files
     print("...Contacting Server...")
 
     headers = {"oid":OID_CLIENT}
@@ -316,7 +262,7 @@ def main():
     if req.status_code == 200:
         print("Got Server List")
     else:
-        print(symmetriccrypt.decrypt(secret_key,req.json(),cipher_list[0],
+        print(secure.decrypt(secret_key,req.json(),cipher_list[0],
         cipher_list[1]).decode())
         sys.exit(0)
 
@@ -325,15 +271,13 @@ def main():
     id = 0
     for item in media_list_enc:
         media_list.append({
-            "id" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["id"], cipher_list[0], cipher_list[1]).decode(),
-            "name" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["name"], cipher_list[0], cipher_list[1]).decode(),
-            "description" : symmetriccrypt.decrypt(secret_key, media_list_enc[id]["description"], cipher_list[0], cipher_list[1]).decode(),
-            "chunks" : int(symmetriccrypt.decrypt(secret_key, media_list_enc[id]["chunks"], cipher_list[0], cipher_list[1]).decode()),
-            "duration" : int(symmetriccrypt.decrypt(secret_key, media_list_enc[id]["duration"], cipher_list[0], cipher_list[1]).decode())
+            "id" : secure.decrypt(secret_key, media_list_enc[id]["id"], cipher_list[0], cipher_list[1]).decode(),
+            "name" : secure.decrypt(secret_key, media_list_enc[id]["name"], cipher_list[0], cipher_list[1]).decode(),
+            "description" : secure.decrypt(secret_key, media_list_enc[id]["description"], cipher_list[0], cipher_list[1]).decode(),
+            "chunks" : int(secure.decrypt(secret_key, media_list_enc[id]["chunks"], cipher_list[0], cipher_list[1]).decode()),
+            "duration" : int(secure.decrypt(secret_key, media_list_enc[id]["duration"], cipher_list[0], cipher_list[1]).decode())
         })
         id += 1
-
-
 
     #media_list = json.loads(decrypt_data(req.content))
 
@@ -382,18 +326,19 @@ def main():
     # Get data from server and send it to the ffplay stdin through a pipe
     for chunk in range(media_item['chunks'] + 1):
         """Decrypt based on key rotation"""
-        req = requests.get(f'{SERVER_URL}/api/download?id={media_item["id"]}&chunk={chunk}', cookies=cookies)
+        req = requests.get(f'{SERVER_URL}/api/download?id={media_item["id"]}&chunk={chunk}')
+
         if not req.status_code == 200:
-            print(symmetriccrypt.decrypt(secret_key,req.json()['error'],cipher_list[0],cipher_list[1]).decode())
+            print(secure.decrypt(secret_key,req.json()['error'],cipher_list[0],cipher_list[1]).decode())
 
         chunk = req.json()
 
-        data = binascii.a2b_base64(symmetriccrypt.decrypt(secret_key,chunk['data'].encode('latin'),
+        data = binascii.a2b_base64(secure.decrypt(secret_key,chunk['data'].encode('latin'),
         cipher_list[0],cipher_list[1]))
-        data_signature = symmetriccrypt.decrypt(secret_key,chunk['data_signature'],cipher_list(0),
-        cipher_list[1])
+        data_signature = secure.decrypt(secret_key,chunk['data_signature'], cipher_list[0],cipher_list[1])
 
-        if not rsa_verify(rsa_utils.load_rsa_private_key("../rsa_keys/server_rsa_pub_key.pub"),data,data_signature):
+        if not rsa.rsa_verify(rsa.load_rsa_public_key("../rsa_keys/server_rsa_pub_key.pub"),
+                                    data,data_signature):
             print("The file sent from the server is not of trust")
             sys.exit(0)
         print("Chunk has a valid signature")
@@ -402,37 +347,8 @@ def main():
         except:
             request.get(f'{SERVER_URL}/api/finished?id={media_item["id"]}')
             if req.status_code == 200:
-                print(symmetriccrypt.decrypt(secret_key,req.json(),cipher_list[0],cipher_list[1]).decode())
+                print(secure.decrypt(secret_key,req.json(),cipher_list[0],cipher_list[1]).decode())
             break
-        """
-        encrypted_data = json.loads(decrypt_data(req.content))
-        if ("error" in encrypted_data.keys()):
-            break
-        data_cypher = cipher(dKey, encrypted_data['iv'].encode('latin')).decryptor()
-        dKey = HKDF(
-            algorithm=hashes.SHA256(),
-            length=16,
-            salt=None,
-            info=b'handshake data').derive(dKey + encrypt_data(encrypted_data['data']))
-
-        dcrypt = start_hmac(dKey).copy()
-        dcrypt.update(encrypted_data['data'].encode('latin'))
-        MAC = dcrypt.finalize()
-        if (MAC != encrypted_data['HMAC'].encode('latin')):
-            return "ERROR 500"
-
-        decrypted = data_cypher.update(encrypted_data['data'].encode('latin')) + data_cypher.finalize()
-        chunk = json.loads(decrypted.decode('latin'))
-
-        data = binascii.a2b_base64(chunk['data'].encode('latin'))
-        try:
-            proc.stdin.write(data)
-        except:
-            break
-    proc.stdin.close()
-    """
-    proc.kill()
-    proc.terminate()
 
 
 if __name__ == '__main__':

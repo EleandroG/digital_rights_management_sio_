@@ -54,7 +54,7 @@ CATALOG = {'898a08080d1840793122b7e118b27a95d117ebce':
 CATALOG_BASE = 'catalog'
 CHUNK_SIZE = 1024 * 4
 
-algs = ['AES', '3DES']
+algs = ['AES', '3DES', 'ChaCha20']
 mods = ['ECB', 'CFB', 'OFB']
 digest_algorithms = ['SHA256', 'SHA512', 'SHA3256']
 
@@ -545,11 +545,11 @@ class MediaServer(resource.Resource):
 
     #Send the list of media files to clients
     def do_list(self, request):
-        object_identifier = request.getHeader('Object Identifier')
+        """object_identifier = request.getHeader('Object Identifier')
         if object_identifier not in self.users:
             request.setResponseCode(401)
             return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
-                                                     self.ciphers[1]).decode('latin')).encode()
+                                                     self.ciphers[1]).decode('latin')).encode()"""
 
         #Build list
         media_list = []
@@ -572,18 +572,11 @@ class MediaServer(resource.Resource):
 
 
     #Send a media chunk to the client
-    def do_download(self, request, who):
+    def do_download(self, request):
         logger.debug(f'Download: args: {request.args}')
 
         media_id = request.args.get(b'id', [None])[0]
         logger.debug(f'Download: id: {media_id}')
-
-        #Object identifier
-        object_identifier = request.getHeader('oid')
-        if object_identifier not in self.users:
-            request.setResponseCode(401)
-            return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
-                                      self.ciphers[1]).decode('latin')).encode()
 
         #Check if the media_id is not None as it is required
         if media_id is None:
@@ -632,7 +625,8 @@ class MediaServer(resource.Resource):
             f.seek(offset)
             data = f.read(CHUNK_SIZE)
 
-            data_signature = rsa_sign(load_rsa_private_key(), data)
+            data_signature = rsa_sign(load_rsa_private_key("rsa_key.pem"), data)
+
 
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps(
@@ -774,7 +768,7 @@ class MediaServer(resource.Resource):
         client_cc_certificate = certificate_object(client_cc_certificate)
         logger.debug(f"Received Client Certificate and signed Nonce")
 
-        path = "../certificates"
+        path = "../certificates1"
         certificates = {}
 
         for filename in os.listdir(path):

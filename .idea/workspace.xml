@@ -4,6 +4,12 @@
     <list default="true" id="fb1382f2-ad2a-43e5-9c62-4f4b660608f1" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/client/client.py" beforeDir="false" afterPath="$PROJECT_DIR$/client/client.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rsa_keys/cliente.pem" beforeDir="false" afterPath="$PROJECT_DIR$/rsa_keys/cliente.pem" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rsa_keys/cliente.pem.pub" beforeDir="false" afterPath="$PROJECT_DIR$/rsa_keys/cliente.pem.pub" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rsa_keys/server_rsa_pub_key.pub" beforeDir="false" afterPath="$PROJECT_DIR$/rsa_keys/server_rsa_pub_key.pub" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/public_k.pem" beforeDir="false" afterPath="$PROJECT_DIR$/server/public_k.pem" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/rsa_key.pem" beforeDir="false" afterPath="$PROJECT_DIR$/server/rsa_key.pem" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/server/rsa_key.pem.pub" beforeDir="false" afterPath="$PROJECT_DIR$/server/rsa_key.pem.pub" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/server/server.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/ven/bin/easy_install" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/server/ven/bin/easy_install-3.9" beforeDir="false" />
@@ -11,6 +17,10 @@
       <change beforePath="$PROJECT_DIR$/server/ven/bin/python3" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/server/ven/bin/python3.9" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/server/ven/pyvenv.cfg" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/diffiehellman.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/rsa_utils.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/symmetriccrypt.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/utils.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -27,7 +37,12 @@
   </component>
   <component name="PropertiesComponent">
     <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
-    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$/server" />
+  </component>
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/server" />
+    </key>
   </component>
   <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
   <component name="TaskManager">
@@ -45,6 +60,10 @@
       <screen x="0" y="0" width="1280" height="800" />
     </state>
     <state x="104" y="62" key="#com.intellij.execution.impl.EditConfigurationsDialog/0.0.1280.800@0.0.1280.800" timestamp="1614029909647" />
+    <state x="225" y="209" key="#com.intellij.fileTypes.FileTypeChooser" timestamp="1614254331565">
+      <screen x="0" y="0" width="1280" height="800" />
+    </state>
+    <state x="225" y="209" key="#com.intellij.fileTypes.FileTypeChooser/0.0.1280.800@0.0.1280.800" timestamp="1614254331565" />
     <state x="561" y="150" width="628" height="548" key="find.popup" timestamp="1614203969535">
       <screen x="0" y="0" width="1280" height="800" />
     </state>
