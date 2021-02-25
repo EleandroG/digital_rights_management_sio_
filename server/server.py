@@ -4,7 +4,7 @@
 83069 - Eleandro Laureano
 78444 - Nuno Matamba
 """
-
+from secrets import token_bytes
 from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 from twisted.web import server, resource
 from twisted.internet import reactor, defer
@@ -66,132 +66,240 @@ CSUIT = {}
 
 
 """This function is used to generate a key"""
-def generate_key(algorithm, salt):
-    password = getpass()
-    password = password.encode()
+def generate_key(algorithm, salt, password):
+    if type(password) != type(b""):
+        password = password.encode()
 
-    if algorithm == 'AES':
-        length = 16
-    else:
+    if algorithm == '3DES':
         length = 24
+    else:
+        length = 16
+    pbkdf = PBKDF2HMAC(
+        salt=salt,
+        algorithm=hashes.SHA256(),
+        iterations=10 ** 5,
+        length=length,
+        backend=default_backend()
+    )
 
-    pbkdf = PBKDF2HMAC(salt=salt, algorithm=hashes.SHA256(), iterations=10 ** 5, length=length,
-                       backend=default_backend()
-                       )
+    key = pbkdf.derive(password)  # type key == byte
 
-    key = pbkdf.derive(password)
     return key
+
+def addPadding(messageBlock, algorithm_name):
+    #select block length
+    if algorithm_name == "3DES":
+        LengthBlock = 8
+    else:
+        #AES-128
+        LengthBlock = 16
+    #missing space to complete block
+    sizePadding = LengthBlock - (len(messageBlock) % LengthBlock)
+    #block with de correct length -> message + padding
+    messageBlock = messageBlock + bytes([sizePadding]*sizePadding)
+    return messageBlock
+
+
+def removepadding(messageBlock):
+    #select block length
+    LengthBlock = len(messageBlock)
+    #descovering the size of padding used
+    sizePadding = int(messageBlock[-1])
+    #removing padding
+    messageBlock = messageBlock[:LengthBlock - sizePadding]
+    return messageBlock
 
 
 """This function is used to encrypt the data"""
-def encrypt(algorithm, cipherMode, file_to_be_encrypted, file_to_be_saved):
+def encrypt(password, message, algorithm_name, cipherMode_name=None):
+    #encode message
+    if type(message) != type(b""):
+        message = message.encode()
+
+    #generate salt
     salt = os.urandom(16)
-    key = generate_key(algorithm, salt)
-
-    if algorithm == 'AES':
-        block_size = 16
-        algorithm = algorithms.AES(key)
-    else:
-        block_size = 8
+    #gemerate key
+    key = generate_key(algorithm_name, salt, password)
+    #algorithm and block length
+    if algorithm_name == 'ChaCha20':
+        nonce = token_bytes(16)
+        algorithm = algorithms.ChaCha20(key, nonce)
+        #chacha20 dont use block, but i will divide the message in blocks
+        blockLength = 128
+    elif algorithm_name == '3DES':
+        blockLength = 8
         algorithm = algorithms.TripleDES(key)
-
-    iv = None
-    if cipherMode == 'ECB':
-        cipher_mode = modes.ECB(iv)
-    elif cipherMode == 'CFB':
-        cipher_mode = modes.CFB(iv)
     else:
+        #AES-128
+        blockLength = 16
+        algorithm = algorithms.AES(key)
+    #gemerate iv
+    iv = None
+    if algorithm_name != "ChaCha20" and cipherMode_name != "ECB":
+        iv = token_bytes(blockLength)
+    #cipher mode
+    if cipherMode_name == "CBC":
+        cipher_mode = modes.CBC(iv)
+    elif cipherMode_name == "CFB":
+        cipher_mode = modes.CFB(iv)
+    elif cipherMode_name == "OFB":
         cipher_mode = modes.OFB(iv)
-
+    elif cipherMode_name == "ECB":
+        cipher_mode = modes.ECB()
+    else:
+        #chacha20 -> no use cipher mode
+        cipher_mode = None
+    #cipher definition
     cipher = Cipher(algorithm, cipher_mode)
+    #encrypt init
     encryptor = cipher.encryptor()
-
-    encrypted_file = open(file_to_be_encrypted, 'r')
-    saved_file = open(file_to_be_saved, 'wb')
-
-    saved_file.write(b64encode(salt))
+    #encrypted_message
+    encrypted_message = b""
+    #write salt, iv and nonce
+    encrypted_message = encrypted_message + b64encode(salt)
     if iv != None:
-        saved_file.write(b64encode(iv))
-
+        encrypted_message = encrypted_message + b64encode(iv)
+    if algorithm_name == "ChaCha20":
+        encrypted_message = encrypted_message + b64encode(nonce)
+    #pointer to read message as blocks
+    pointer = 0
     while True:
-        block = encrypted_file.read(block_size)
+        block = message[pointer:pointer+blockLength]
+        pointer += blockLength
+        #last block length == blocklength
         if block == "":
             break
-
-        if len(block) != block_size:
+        #last block length < blockLength
+        if len(block) != blockLength:
             break
-
-        block = encryptor.update(block.encode())
-        saved_file.write(b64encode(block))
-        block = block.encode()
+        #encrypt block
         block = encryptor.update(block)
+        #write
+        encrypted_message = encrypted_message + b64encode(block)
+    #padding
+    if algorithm_name != "ChaCha20":
+        block = addPadding(block, algorithm_name)
+    #encrypt block
+    block = encryptor.update(block)
+    #write
+    encrypted_message = encrypted_message + b64encode(block)
 
-        saved_file.write(b64encode(block))
-
-        encrypted_file.close()
-        saved_file.close()
+    return encrypted_message
 
 
 """This function is used to decrypt the data"""
-def decrypt(algorithm, cipherMode, file_to_be_decrypted, file_to_be_saved):
-    decrypted_file = open(file_to_be_decrypted, 'rb')
-    saved_file = open(file_to_be_saved, 'w')
-
-    salt = decrypted_file.read(math.ceil(16 / 3) * 4)
+def decrypt(password, encrypted_message, algorithm_name, cipherMode_name=None):
+    message = b""
+    #pointer to read message as blocks
+    pointer = 0
+    #get salt
+    salt = encrypted_message[pointer:pointer + math.ceil(16 / 3) * 4]
+    pointer += math.ceil(16 / 3) * 4
     salt = b64decode(salt)
-    key = generate_key(algorithm, salt)
-
-    if algorithm == 'AES':
-        block_size = 16
-        algorithm = algorithms.AES(key)
-    else:
-        block_size = 8
+    #gemerate key
+    key = generate_key(algorithm_name, salt, password)
+    #algorithm and block length
+    if algorithm_name == 'ChaCha20':
+        #geting nonce
+        nonce = encrypted_message[pointer:pointer + math.ceil(16 / 3) * 4]
+        pointer += math.ceil(16 / 3) * 4
+        nonce = b64decode(nonce)
+        algorithm = algorithms.ChaCha20(key, nonce)
+        #chacha20 dont use block, but i will divide the message in blocks
+        blockLength = 128
+    elif algorithm_name == '3DES':
+        blockLength = 8
         algorithm = algorithms.TripleDES(key)
-
-    iv = None
-    if cipherMode == 'ECB':
-        cipher_mode = modes.ECB(iv)
-    elif cipherMode == 'CFB':
-        cipher_mode = modes.CFB(iv)
     else:
+        #AES-128
+        blockLength = 16
+        algorithm = algorithms.AES(key)
+    #get iv
+    if algorithm_name != "ChaCha20" and cipherMode_name != "ECB":
+        iv = encrypted_message[pointer:pointer + math.ceil(blockLength / 3) * 4]
+        pointer+= math.ceil(blockLength / 3) * 4
+        iv = b64decode(iv)
+    #cipher mode
+
+    if cipherMode_name == "CFB":
+        cipher_mode = modes.CFB(iv)
+    elif cipherMode_name == "OFB":
         cipher_mode = modes.OFB(iv)
-
+    elif cipherMode_name == "ECB":
+        cipher_mode = modes.ECB()
+    else:
+        #chacha20 -> dont use cipher mode
+        cipher_mode = None
+    #cipher definition
     cipher = Cipher(algorithm, cipher_mode)
+    #decrypt init
     decryptor = cipher.decryptor()
-    next_block = b64decode(decrypted_file.read(math.ceil(block_size / 3) * 4))
-
+    nextBlock = b64decode(encrypted_message[pointer:pointer + math.ceil(blockLength / 3) * 4])
+    pointer+= math.ceil(blockLength / 3) * 4
     while True:
-        block = next_block
-        next_block = b64decode(decrypted_file.read(math.ceil(block_size / 3) * 4))
+        block = nextBlock
+        nextBlock = b64decode(encrypted_message[pointer:pointer + math.ceil(blockLength / 3) * 4])
+        pointer+= math.ceil(blockLength / 3) * 4
+        #decrypt block
         block = decryptor.update(block)
-        if next_block == b"":
+        #block == last block
+        if nextBlock == b"":
             break
-        saved_file.write(block.decode())
+        #write
+        message = message + block
+    #padding
 
-    saved_file.write(block.decode())
-    decrypted_file.close()
-    saved_file.close()
+    #write
+    message = message + block
+
+    return message
+
 
 """This function is used to return the Diffie Hellman parameters"""
-def diffie_hellman_parameters(key=2048):
-    parameters = dh.generate_parameters(generator=2, key_size=key)
-    return parameters
+#def diffie_hellman_parameters(key=2048):
+#    parameters = dh.generate_parameters(generator=2, key_size=key)
+#    return parameters
+
+def diffie_hellman_parameters(key_size=2048):
+    parameters = dh.generate_parameters(generator=2, key_size=key_size)
+    parameter_numbers = parameters.parameter_numbers()
+    p = parameter_numbers.p
+    g = parameter_numbers.g
+
+    return [p,g]
 
 """This function is used to return the derived key"""
-def diffie_hellman_common_secret(peer_public_key, private_key):
-    shared_key = private_key.exchange(peer_public_key)
+def diffie_hellman_common_secret(my_private_key, peer_public_number_y):
+    parameters = my_private_key.parameters()
+    parameter_numbers = parameters.parameter_numbers()
+
+    peer_public_numbers = dh.DHPublicNumbers(peer_public_number_y, parameter_numbers)
+
+    peer_public_key = peer_public_numbers.public_key()
+
+    shared_key = my_private_key.exchange(peer_public_key)
+
     derived_key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b'handshake data').derive(shared_key)
     return derived_key
 
+
 """This function is used to generate a private key used in the exchange"""
 def diffie_hellman_generate_private_key(parameters):
+    p = parameters[0]
+    g = parameters[1]
+    parameter_numbers = dh.DHParameterNumbers(p, g)
+    parameters = parameter_numbers.parameters()
+
     private_key = parameters.generate_private_key()
     return private_key
+
 
 """This function is used to generate e public key"""
 def diffie_hellman_generate_public_key(private_key):
     public_key = private_key.public_key()
-    return public_key
+    public_number_y = public_key.public_numbers().y
+    return public_number_y
+
 
 """This function is used to generate a public key"""
 def generate_rsa_public_key(private_key, file_to_be_saved=None):
@@ -236,6 +344,24 @@ def generate_rsa_key_pair(key_size, file_to_be_saved=None, password=None):
     public_key = generate_rsa_public_key(private_key, file_to_be_saved)
 
     return (private_key, public_key)
+
+
+def load_rsa_private_key(sorceFile_name, password=None):
+    if password != None:
+        password = password.encode()
+
+    key_file = open(sorceFile_name, 'rb')
+    private_key = serialization.load_pem_private_key(key_file.read(),
+                                                     password=password)
+    key_file.close()
+
+    return private_key
+
+
+def rsa_sign(private_key,message):
+    signature = private_key.sign(message, padding.PSS(mgf=padding.MGF1(hashes.SHA384()),
+                                                      salt_length=padding.PSS.MAX_LENGTH), hashes.SHA384())
+    return signature
 
 
 def certificate_object(certificate):
@@ -384,31 +510,46 @@ def verify_signature(certificate, signature, nonce):
     return True
 
 
+def load_private_key_file(path):
+    with open(path, "rb") as key_file:
+        pem = serialization.load_pem_private_key(
+            key_file.read(),
+            password=None,
+            backend=default_backend()
+        )
+        return pem
+
+
+def sign_with_private_key(pk, nonce):
+    return pk.sign(nonce, padding.PKCS1v15(), hashes.SHA1())
+
+
+def load_cert_from_disk(file_name):
+    with open(file_name, 'rb') as file:
+        pem_data = file.read()
+
+    return pem_data
+
+
 class MediaServer(resource.Resource):
     isLeaf = True
 
     def __init__(self):
-        self.diffie_hellman_parameters = None
+        self.dh_parameters = None
         self.diffie_hellman_private_key = None
         self.secret_key = None
         self.ciphers = None
-        self.nonce = None
+        self.server_nonce = None
         self.users = []
+
 
     #Send the list of media files to clients
     def do_list(self, request):
-
-        # object identifier OID
-        # auth = request.getHeader('Authorization')
-        # if not auth:
-        #    request.setResponseCode(401)
-        #    return 'Not authorized'
-
-        #object_identifier = request.getHeader('Object Identifier')
-        #if object_identifier not in self.users:
-        #    request.setResponseCode(401)
-        #    return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
-        #                                             self.ciphers[1]).decode('latin')).encode()
+        object_identifier = request.getHeader('Object Identifier')
+        if object_identifier not in self.users:
+            request.setResponseCode(401)
+            return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
+                                                     self.ciphers[1]).decode('latin')).encode()
 
         #Build list
         media_list = []
@@ -429,6 +570,7 @@ class MediaServer(resource.Resource):
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
         return json.dumps(media_list, indent=4).encode('latin')
 
+
     #Send a media chunk to the client
     def do_download(self, request, who):
         logger.debug(f'Download: args: {request.args}')
@@ -437,17 +579,17 @@ class MediaServer(resource.Resource):
         logger.debug(f'Download: id: {media_id}')
 
         #Object identifier
-        #object_identifier = request.getHeader('oid')
-        #if object_identifier not in self.users:
-        #    request.setResponseCode(401)
-        #    return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
-        #                              self.ciphers[1]).decode('latin')).encode()
+        object_identifier = request.getHeader('oid')
+        if object_identifier not in self.users:
+            request.setResponseCode(401)
+            return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
+                                      self.ciphers[1]).decode('latin')).encode()
 
         #Check if the media_id is not None as it is required
         if media_id is None:
             request.setResponseCode(400)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': encrypt(self.secret_key, 'invalid Media ID',
+            return json.dumps({'error': encrypt(self.secret_key, 'invalid media id',
                                                 self.ciphers[0], self.ciphers[1]).decode('latin')}).encode('latin')
 
         #Convert bytes to str
@@ -481,26 +623,16 @@ class MediaServer(resource.Resource):
                                                                self.ciphers[0],
                                                                self.ciphers[1]).decode('latin')}).encode('latin')
 
-        # if(who not in readings.keys()):
-        #    readings[who] = {media_id:0}
-        # elif(media_id not in readings[who].keys()):
-        #    readings[who][media_id] = 0
-
-        # logger.debug(f'Download: chunk: {chunk_id} - readingsByChunk: {math.ceil((readings[who][media_id]*100) / media_item["file_size"])/100} ')
-
         logger.debug(f'Download: chunk: {chunk_id}')
 
         offset = chunk_id * CHUNK_SIZE
-
-        #readings[who][media_id] += CHUNK_SIZE
 
         #Open file, seek to correct position and return the chunk
         with open(os.path.join(CATALOG_BASE, media_item['file_name']), 'rb') as f:
             f.seek(offset)
             data = f.read(CHUNK_SIZE)
 
-            #signature!  a ir buscar os rsa's
-            #data_signature = rsa_sign(rsa_utils.load_rsa_private_key(), data)
+            data_signature = rsa_sign(load_rsa_private_key(), data)
 
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
             return json.dumps(
@@ -509,7 +641,8 @@ class MediaServer(resource.Resource):
                     'chunk': encrypt(self.secret_key, str(chunk_id), self.ciphers[0], self.ciphers[1]).decode('latin'),
                     'data': encrypt(self.secret_key, binascii.b2a_base64(data).decode('latin').strip(),
                                     self.ciphers[0], self.ciphers[1]).decode('latin'),
-                    #'data_signature': symmetriccrypt.encrypt(self.secret_key, data_signature, self.client_chosen_ciphers[0], self.client_chosen_ciphers[1]).decode('latin')
+                    'data_signature': encrypt(self.secret_key, data_signature, self.ciphers[0],
+                                                             self.ciphers[1]).decode('latin')
                 }, indent=4
             ).encode('latin')
 
@@ -518,13 +651,120 @@ class MediaServer(resource.Resource):
         return json.dumps({'error': encrypt(self.secret_key, 'unknown', self.ciphers[0],
                                             self.ciphers[1]).decode('latin')}, indent=4).encode('latin')
 
-    #server authenticate
+
+    """Handle a GET request"""
+    def render_GET(self, request):
+        logger.debug(f'Received request for {request.uri}')
+
+        try:
+
+            if request.path == b'/api/protocols':
+                return self.do_get_protocols(request)
+
+            elif request.path == b'/api/dh-parameters':
+                dh_parameters = diffie_hellman_parameters()
+                self.dh_parameters = dh_parameters
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps(dh_parameters, indent=4).encode('latin')
+
+            elif request.path == b'/api/cipher-suite':
+                list_of_ciphers = [algs, mods, digest_algorithms]
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps(list_of_ciphers, indent=4).encode('latin')
+
+            elif request.path == b'/api/list':
+                return self.do_list(request)
+
+            elif request.path == b'/api/download':
+                return self.do_download(request)
+
+            else:
+                request.responseHeaders.addRawHeader(b"content-type", b'text/plain')
+                return b'Methods: /api/list /api/download'
+
+        except Exception as e:
+            logger.exception(e)
+            request.setResponseCode(500)
+            request.responseHeaders.addRawHeader(b"content-type", b"text/plain")
+            return b''
+
+
+    """Handle a POST request"""
+    def render_POST(self, request):
+        logger.debug(f'Received POST for {request.uri}')
+        try:
+
+            if request.uri == b'/api/rsa_exchange':
+                return self.rsa_exchange(request)
+            elif request.uri == b'/api/server_auth':
+                return self.server_authentication(request)
+            elif request.uri == b'/api/client_auth':
+                return self.client_authentication(request)
+
+            if request.path == b'/api/dh-handshake':
+                """Generate a private key, a public key and public number of client"""
+                public_number_of_client = json.loads(request.content.read())[0]
+                self.diffie_hellman_private_key = diffie_hellman_generate_private_key(self.dh_parameters)
+                diffie_hellman_public_number = diffie_hellman_generate_public_key(self.diffie_hellman_private_key)
+                self.secret_key = diffie_hellman_common_secret(self.diffie_hellman_private_key, public_number_of_client)
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps([diffie_hellman_public_number], indent=4).encode('latin')
+
+            elif request.path == b'/api/chosen-ciphers':
+                """Generate a client public key"""
+                self.ciphers = json.loads(request.content.read())
+                print(self.ciphers)
+                message = "The Cryptography Pattern was established"
+                message = encrypt(self.secret_key, message, self.ciphers[0], self.ciphers[1])
+                #print(message)
+                message = message.decode('latin')
+                #print(message)
+                #print(type(message))
+                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
+                return json.dumps({"data": message}, indent=4).encode('latin')
+
+            else:
+                request.responseHeaders.addRawHeader(b"content-type", b'text/plain')
+                return b'Methods: /api/protocols /api/list /api/download'
+
+        except Exception as e:
+            logger.exception(e)
+            request.setResponseCode(500)
+            request.responseHeaders.addRawHeader(b"content-type", b"text/plain")
+            return b''
+
+
+    def server_authentication(self, request):
+        dict = request.content.read()
+        data = json.loads(dict)
+        logger.debug(f"Received nonce from client")
+
+        client_nonce = data["nonce"].encode('latin')
+        client_nonce = decrypt(self.secret_key, client_nonce, self.ciphers[0], self.ciphers[1])
+
+        private_key = load_private_key_file("ServerCertKey.pem")
+        signed_client_nonce = sign_with_private_key(private_key, client_nonce)
+        certificate = load_cert_from_disk("ServerCert.pem")
+
+        self.server_nonce = os.urandom(64)
+
+        certificate = encrypt(self.secret_key, certificate, self.ciphers[0], self.ciphers[1]).decode('latin')
+        signed_client_nonce = encrypt(self.secret_key, signed_client_nonce, self.ciphers[0], self.ciphers[1]).decode('latin')
+        server_nonce = encrypt(self.secret_key, self.server_nonce, self.ciphers[0], self.ciphers[1]).decode('latin')
+
+        return json.dumps({
+                "server_certificate": certificate,
+                "signed_client_nonce": signed_client_nonce,
+                "server_nonce": server_nonce
+            }).encode('latin')
+
+
     def client_authentication(self, request):
         dict = request.content.read()
         data = json.loads(dict)
 
-        server_nonce = data["server_nonce"].encode('latin')
-        server_nonce = decrypt(self.secret_key, server_nonce,
+        signed_server_nonce = data["signed_server_nonce"].encode('latin')
+        signed_server_nonce = decrypt(self.secret_key, signed_server_nonce,
                                                      self.ciphers[0], self.ciphers[1])
 
         client_cc_certificate = data["client_cc_certificate"].encode('latin')
@@ -534,7 +774,7 @@ class MediaServer(resource.Resource):
         client_cc_certificate = certificate_object(client_cc_certificate)
         logger.debug(f"Received Client Certificate and signed Nonce")
 
-        path = "../cc_certificates"
+        path = "../certificates"
         certificates = {}
 
         for filename in os.listdir(path):
@@ -547,7 +787,7 @@ class MediaServer(resource.Resource):
         chain_completed = build_certificate_chain(chain, client_cc_certificate, certificates)
 
         if not chain_completed:
-            logger.debug(f"Couldn't complete the certificate chain")
+            logger.debug(f"Didn't complete the certificate chain")
             status = False
 
         else:
@@ -557,17 +797,17 @@ class MediaServer(resource.Resource):
                 logger.debug(error_messages)
                 status = False
             else:
-                status = verify_signature(client_cc_certificate, server_nonce, self.nonce)
+                status = verify_signature(client_cc_certificate, signed_server_nonce, self.server_nonce)
 
         if status:
             logger.debug(f"Client certificate chain validated and nonce signed by the client")
             object_identifier = ObjectIdentifier("2.5.4.5")
-            self.authorized_users.append(client_cc_certificate.subject.get_attributes_for_oid(object_identifier)[0].value)
+            self.users.append(client_cc_certificate.subject.get_attributes_for_oid(object_identifier)[0].value)
 
             logger.debug(f"User logged in with success")
 
-        status_enc = encrypt(self.secret_key, str(status), self.client_chosen_ciphers[0],
-                                            self.client_chosen_ciphers[1]).decode('latin')
+        status_enc = encrypt(self.secret_key, str(status), self.ciphers[0],
+                                            self.ciphers[1]).decode('latin')
 
         return json.dumps({
             "status": status_enc
@@ -595,83 +835,6 @@ class MediaServer(resource.Resource):
         return json.dumps({
                 "server_rsa_public_key":pubk_enc
             }).encode('latin')
-
-
-    """Handle a GET request"""
-    def render_GET(self, request):
-        logger.debug(f'Received request for {request.uri}')
-
-        try:
-            if request.path == b'/api/list':
-                return self.do_list(request)
-
-            elif request.path == b'/api/download':
-                return self.do_download(request)
-
-            elif request.path == b'/api/dh-parameters':
-                dh_parameters = diffie_hellman_parameters()
-                self.diffie_hellman_parameters = dh_parameters
-                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-                return json.dumps(dh_parameters, indent=4).encode('latin')
-
-            elif request.path == b'/api/protocols':
-                return self.do_get_protocols(request)
-
-            elif request.path == b'/api/cipher-suite':
-                list_of_ciphers = [algs, mods, digest_algorithms]
-                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-                return json.dumps(list_of_ciphers, indent=4).encode('latin')
-
-            else:
-                request.responseHeaders.addRawHeader(b"content-type", b'text/plain')
-                return b'Methods: /api/list /api/download'
-
-        except Exception as e:
-            logger.exception(e)
-            request.setResponseCode(500)
-            request.responseHeaders.addRawHeader(b"content-type", b"text/plain")
-            return b''
-
-    """Handle a POST request"""
-    def render_POST(self, request):
-        logger.debug(f'Received POST for {request.uri}')
-        try:
-
-            # server auth
-            # client auth
-            # rsa exchange
-
-            if request.path == b'/api/dh-handshake':
-                """Generate a private key, a public key and public number of client"""
-                public_number_of_client = json.loads(request.content.read())[0]
-                self.diffie_hellman_private_key = diffie_hellman_generate_private_key(self.diffie_hellman_parameters)
-                diffie_hellman_public_number = diffie_hellman_generate_public_key(self.diffie_hellman_private_key)
-                self.secret_key = diffie_hellman_common_secret(self.diffie_hellman_private_key, public_number_of_client)
-                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-                return json.dumps([diffie_hellman_public_number], indent=4).encode('latin')
-
-            elif request.path == b'/api/chosen-ciphers':
-                """Generate a client public key"""
-                self.ciphers = json.loads(request.content.read())
-                print(self.ciphers)
-                message = "The Cryptography Pattern was established"
-                message = encrypt(self.secret_key, message, self.ciphers[0], self.ciphers[1])
-                print(message)
-                message = message.decode('latin')
-                print(message)
-                print(type(message))
-                request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-                return json.dumps({"data": message}, indent=4).encode('latin')
-
-            else:
-                request.responseHeaders.addRawHeader(b"content-type", b'text/plain')
-                return b'Methods: /api/csuit /api/hello /api/bye /api/diffiehellman'
-
-        except Exception as e:
-            logger.exception(e)
-            request.setResponseCode(500)
-            request.responseHeaders.addRawHeader(b"content-type", b"text/plain")
-            return b''
 
 
 print("Server started")
