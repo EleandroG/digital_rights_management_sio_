@@ -47,6 +47,7 @@ SERVER_URL = 'http://127.0.0.1:8083'
 licenses = {}
 OID_CLIENT = ''
 
+
 """This function is used to initialize hmac based on the communication"""
 def start_hmac(key):
     global CSUIT
@@ -58,8 +59,6 @@ def start_hmac(key):
         digest = hashes.SHA512()
     elif (dige == "SHA3256"):
         digest = hashes.SHA3_256()
-    elif (dige == "SHA3512"):
-        digest = hashes.SHA3_512()
     return hmac.HMAC(key, digest, backend=default_backend())
 
 
@@ -123,7 +122,7 @@ def cryptography():
     if req.status_code == 200:
         print("Got dh-parameters")
     dh_parameters = req.json()
-    #Get the private key and the number y
+    #Get the private key and the number
     dh_private_k = diffie_hellman.diffie_hellman_generate_private_key(dh_parameters)
     dh_public_num = diffie_hellman.diffie_hellman_generate_public_key(dh_private_k)
 
@@ -142,10 +141,10 @@ def cryptography():
     if req.status_code == 200:
         print("Got ciphers list")
     cipher_list = req.json()
-    cipher_list[0] = random.choice(cipher_list[0]) # Algorithm
+    cipher_list[0] = random.choice(cipher_list[0]) #Algorithm
     cipher_list[1] = random.choice(cipher_list[1]) #Cipher
     cipher_list[2] = random.choice(cipher_list[2]) #Digest
-    print(f"chosen ciphers:\n\tAlgorithm: {cipher_list[0]}\n\tCipher Mode: "
+    print(f"Chosen ciphers:\n\tAlgorithm: {cipher_list[0]}\n\tCipher Mode: "
           f"{cipher_list[1]}\n\tHash Function: {cipher_list[2]}")
 
     #Comunicate chosen cyphers to server
@@ -159,16 +158,15 @@ def cryptography():
     print(f"server message:  {message}")
     return dh_parameters,dh_private_k,secret_key,cipher_list
 
+
 def authentication():
     global OID_CLIENT
 
     client_nonce = os.urandom(64)
     encripted_client_nonce = secure.encrypt(secret_key,client_nonce,
     cipher_list[0],cipher_list[1]).decode('latin')
+    req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps({"nonce":encripted_client_nonce}).encode())
 
-    req = requests.post(f'{SERVER_URL}/api/server_auth',data = json.dumps(
-        {"nonce":encripted_client_nonce}
-    ).encode())
     if req.status_code == 200:
         print("Received Certificated and Signed Nonce")
 
@@ -196,7 +194,7 @@ def authentication():
     chain_completed = utils.build_certificate_chain(chain,server_cert,certificates)
 
     if not chain_completed:
-        print(" Certificated Chain is not completed")
+        print("Certificated Chain is not completed")
         return False
 
     else:
@@ -208,7 +206,8 @@ def authentication():
         else:
             if not utils.verify_signature(server_cert,signed_client_nonce,client_nonce):
                 return False
-    print("SUCESS..Validated the server certicate chain and nonce signed by the server ")
+    print("SUCCESS..Validated the server certificate chain and nonce signed by the server! ")
+
 
 def rsa_exchange():
     private_key,public_key = rsa.generate_rsa_key_pair(2048, "../rsa_keys/cliente.pem")
@@ -219,11 +218,7 @@ def rsa_exchange():
         cipher_list[1]
     ).decode('latin')
 
-    req = requests.post(f'{SERVER_URL}/api/rsa_exchange',
-    data = json.dumps({"client_rsa_pub_key": pubk_enc}).encode()
-
-
-    )
+    req = requests.post(f'{SERVER_URL}/api/rsa_exchange', data = json.dumps({"client_rsa_pub_key": pubk_enc}).encode())
 
     if req.status_code == 200:
         print("Received Server public rsa key")
@@ -323,7 +318,7 @@ def main():
     else:
         proc = subprocess.Popen(['ffplay', '-i', '-'], stdin=subprocess.PIPE)
 
-    # Get data from server and send it to the ffplay stdin through a pipe
+    #Get data from server and send it to the ffplay stdin through a pipe
     for chunk in range(media_item['chunks'] + 1):
         """Decrypt based on key rotation"""
         req = requests.get(f'{SERVER_URL}/api/download?id={media_item["id"]}&chunk={chunk}')
@@ -337,8 +332,7 @@ def main():
         cipher_list[0],cipher_list[1]))
         data_signature = secure.decrypt(secret_key,chunk['data_signature'], cipher_list[0],cipher_list[1])
 
-        if not rsa.rsa_verify(rsa.load_rsa_public_key("../rsa_keys/server_rsa_pub_key.pub"),
-                                    data,data_signature):
+        if not rsa.rsa_verify(rsa.load_rsa_public_key("../rsa_keys/server_rsa_pub_key.pub"), data,data_signature):
             print("The file sent from the server is not of trust")
             sys.exit(0)
         print("Chunk has a valid signature")

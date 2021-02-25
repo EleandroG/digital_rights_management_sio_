@@ -104,7 +104,7 @@ def remove_padding(message_block):
 
 
 """This function is used to encrypt the data"""
-def encrypt(password, message, algorithm_name, cipherMode_name=None):
+def encrypt(password, message, algorithm_name, cipherMode=None):
     if type(message) != type(b""):
         message = message.encode()
 
@@ -124,14 +124,14 @@ def encrypt(password, message, algorithm_name, cipherMode_name=None):
         algorithm = algorithms.AES(key)
 
     iv = None
-    if algorithm_name != "ChaCha20" and cipherMode_name != "ECB":
+    if algorithm_name != "ChaCha20" and cipherMode != "ECB":
         iv = token_bytes(block_length)
 
-    if cipherMode_name == "CFB":
+    if cipherMode == "CFB":
         cipher_mode = modes.CFB(iv)
-    elif cipherMode_name == "OFB":
+    elif cipherMode == "OFB":
         cipher_mode = modes.OFB(iv)
-    elif cipherMode_name == "ECB":
+    elif cipherMode == "ECB":
         cipher_mode = modes.ECB()
     else:
         cipher_mode = None
@@ -547,8 +547,8 @@ class MediaServer(resource.Resource):
         if media_id is None:
             request.setResponseCode(400)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': encrypt(self.secret_key, 'invalid media id',
-                                                self.ciphers[0], self.ciphers[1]).decode('latin')}).encode('latin')
+            return json.dumps({'error': encrypt(self.secret_key, 'invalid media id', self.ciphers[0],
+                                                self.ciphers[1]).decode('latin')}).encode('latin')
 
         #Convert bytes to str
         media_id = media_id.decode('latin')
@@ -557,8 +557,7 @@ class MediaServer(resource.Resource):
         if media_id not in CATALOG:
             request.setResponseCode(404)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': encrypt(self.secret_key, 'media file not found',
-                                                               self.ciphers[0],
+            return json.dumps({'error': encrypt(self.secret_key, 'media file not found', self.ciphers[0],
                                                                self.ciphers[1]).decode('latin')}).encode('latin')
 
         #Get the media item
@@ -577,12 +576,10 @@ class MediaServer(resource.Resource):
         if not valid_chunk:
             request.setResponseCode(400)
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps({'error': encrypt(self.secret_key, 'invalid chunk id',
-                                                               self.ciphers[0],
+            return json.dumps({'error': encrypt(self.secret_key, 'invalid chunk id', self.ciphers[0],
                                                                self.ciphers[1]).decode('latin')}).encode('latin')
 
         logger.debug(f'Download: chunk: {chunk_id}')
-
         offset = chunk_id * CHUNK_SIZE
 
         #Open file, seek to correct position and return the chunk
@@ -594,16 +591,14 @@ class MediaServer(resource.Resource):
 
 
             request.responseHeaders.addRawHeader(b"content-type", b"application/json")
-            return json.dumps(
-                {
+            return json.dumps({
                     'media_id': encrypt(self.secret_key, media_id, self.ciphers[0], self.ciphers[1]).decode('latin'),
                     'chunk': encrypt(self.secret_key, str(chunk_id), self.ciphers[0], self.ciphers[1]).decode('latin'),
                     'data': encrypt(self.secret_key, binascii.b2a_base64(data).decode('latin').strip(),
                                     self.ciphers[0], self.ciphers[1]).decode('latin'),
                     'data_signature': encrypt(self.secret_key, data_signature, self.ciphers[0],
-                                                             self.ciphers[1]).decode('latin')
-                }, indent=4
-            ).encode('latin')
+                                                             self.ciphers[1]).decode('latin')},
+                indent=4).encode('latin')
 
         #File was not open?
         request.responseHeaders.addRawHeader(b"content-type", b"application/json")
@@ -765,12 +760,9 @@ class MediaServer(resource.Resource):
 
             logger.debug(f"User logged in with success")
 
-        status_enc = encrypt(self.secret_key, str(status), self.ciphers[0],
-                                            self.ciphers[1]).decode('latin')
+        status_enc = encrypt(self.secret_key, str(status), self.ciphers[0], self.ciphers[1]).decode('latin')
 
-        return json.dumps({
-            "status": status_enc
-        }).encode('latin')
+        return json.dumps({"status": status_enc}).encode('latin')
 
 
     def rsa_exchange(self, request):
@@ -787,13 +779,11 @@ class MediaServer(resource.Resource):
         file_to_be_saved_public_key.close()
         logger.debug(f"Received Client Public RSA Key")
 
-        pubk_enc = encrypt(self.secret_key,
-                           public_key.public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode(),
+        pubk_enc = encrypt(self.secret_key, public_key.public_bytes(encoding=serialization.Encoding.PEM,
+                                                                    format=serialization.PublicFormat.SubjectPublicKeyInfo).decode(),
                            self.ciphers[0], self.ciphers[1]).decode('latin')
 
-        return json.dumps({
-                "server_rsa_public_key":pubk_enc
-            }).encode('latin')
+        return json.dumps({"server_rsa_public_key":pubk_enc}).encode('latin')
 
 
 print("Server started")
