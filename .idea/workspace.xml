@@ -3,7 +3,6 @@
   <component name="ChangeListManager">
     <list default="true" id="fb1382f2-ad2a-43e5-9c62-4f4b660608f1" name="Default Changelist" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/client/client.py" beforeDir="false" afterPath="$PROJECT_DIR$/client/client.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsa_keys/cliente.pem" beforeDir="false" afterPath="$PROJECT_DIR$/rsa_keys/cliente.pem" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsa_keys/cliente.pem.pub" beforeDir="false" afterPath="$PROJECT_DIR$/rsa_keys/cliente.pem.pub" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rsa_keys/server_rsa_pub_key.pub" beforeDir="false" afterPath="$PROJECT_DIR$/rsa_keys/server_rsa_pub_key.pub" afterDir="false" />
@@ -11,16 +10,7 @@
       <change beforePath="$PROJECT_DIR$/server/rsa_key.pem" beforeDir="false" afterPath="$PROJECT_DIR$/server/rsa_key.pem" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/rsa_key.pem.pub" beforeDir="false" afterPath="$PROJECT_DIR$/server/rsa_key.pem.pub" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/server/server.py" beforeDir="false" afterPath="$PROJECT_DIR$/server/server.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/ven/bin/easy_install" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/ven/bin/easy_install-3.9" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/ven/bin/python" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/ven/bin/python3" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/ven/bin/python3.9" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/server/ven/pyvenv.cfg" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/diffiehellman.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/rsa_utils.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/symmetriccrypt.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/utils/utils.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/utils.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/utils/secure.py" beforeDir="false" afterPath="$PROJECT_DIR$/utils/secure.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

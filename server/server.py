@@ -72,154 +72,60 @@ def generate_key(algorithm, salt, password):
 
     if algorithm == '3DES':
         length = 24
+    elif algorithm == 'ChaCha20':
+        length = 32
     else:
         length = 16
-    pbkdf = PBKDF2HMAC(
-        salt=salt,
-        algorithm=hashes.SHA256(),
-        iterations=10 ** 5,
-        length=length,
-        backend=default_backend()
-    )
-
-    key = pbkdf.derive(password)  # type key == byte
+    pbkdf = PBKDF2HMAC(salt=salt, algorithm=hashes.SHA256(), iterations=10**5, length=length,
+                       backend=default_backend())
+    key = pbkdf.derive(password)
 
     return key
 
-def addPadding(messageBlock, algorithm_name):
-    #select block length
-    if algorithm_name == "3DES":
-        LengthBlock = 8
+def add_padding(message_block, algorithm):
+    if algorithm == "3DES":
+        length_block = 8
     else:
-        #AES-128
-        LengthBlock = 16
-    #missing space to complete block
-    sizePadding = LengthBlock - (len(messageBlock) % LengthBlock)
-    #block with de correct length -> message + padding
-    messageBlock = messageBlock + bytes([sizePadding]*sizePadding)
-    return messageBlock
+        length_block = 16
+
+    size_padding = length_block - (len(message_block) % length_block)
+
+    message_block = message_block + bytes([size_padding] * size_padding)
+    return message_block
 
 
-def removepadding(messageBlock):
-    #select block length
-    LengthBlock = len(messageBlock)
-    #descovering the size of padding used
-    sizePadding = int(messageBlock[-1])
-    #removing padding
-    messageBlock = messageBlock[:LengthBlock - sizePadding]
-    return messageBlock
+def remove_padding(message_block):
+    length_block = len(message_block)
+
+    size_padding = int(message_block[-1])
+
+    message_block = message_block[:length_block - size_padding]
+    return message_block
 
 
 """This function is used to encrypt the data"""
 def encrypt(password, message, algorithm_name, cipherMode_name=None):
-    #encode message
     if type(message) != type(b""):
         message = message.encode()
 
-    #generate salt
     salt = os.urandom(16)
-    #gemerate key
+
     key = generate_key(algorithm_name, salt, password)
-    #algorithm and block length
+
     if algorithm_name == 'ChaCha20':
         nonce = token_bytes(16)
         algorithm = algorithms.ChaCha20(key, nonce)
-        #chacha20 dont use block, but i will divide the message in blocks
-        blockLength = 128
+        block_length = 128
     elif algorithm_name == '3DES':
-        blockLength = 8
+        block_length = 8
         algorithm = algorithms.TripleDES(key)
     else:
-        #AES-128
-        blockLength = 16
+        block_length = 16
         algorithm = algorithms.AES(key)
-    #gemerate iv
+
     iv = None
     if algorithm_name != "ChaCha20" and cipherMode_name != "ECB":
-        iv = token_bytes(blockLength)
-    #cipher mode
-    if cipherMode_name == "CBC":
-        cipher_mode = modes.CBC(iv)
-    elif cipherMode_name == "CFB":
-        cipher_mode = modes.CFB(iv)
-    elif cipherMode_name == "OFB":
-        cipher_mode = modes.OFB(iv)
-    elif cipherMode_name == "ECB":
-        cipher_mode = modes.ECB()
-    else:
-        #chacha20 -> no use cipher mode
-        cipher_mode = None
-    #cipher definition
-    cipher = Cipher(algorithm, cipher_mode)
-    #encrypt init
-    encryptor = cipher.encryptor()
-    #encrypted_message
-    encrypted_message = b""
-    #write salt, iv and nonce
-    encrypted_message = encrypted_message + b64encode(salt)
-    if iv != None:
-        encrypted_message = encrypted_message + b64encode(iv)
-    if algorithm_name == "ChaCha20":
-        encrypted_message = encrypted_message + b64encode(nonce)
-    #pointer to read message as blocks
-    pointer = 0
-    while True:
-        block = message[pointer:pointer+blockLength]
-        pointer += blockLength
-        #last block length == blocklength
-        if block == "":
-            break
-        #last block length < blockLength
-        if len(block) != blockLength:
-            break
-        #encrypt block
-        block = encryptor.update(block)
-        #write
-        encrypted_message = encrypted_message + b64encode(block)
-    #padding
-    if algorithm_name != "ChaCha20":
-        block = addPadding(block, algorithm_name)
-    #encrypt block
-    block = encryptor.update(block)
-    #write
-    encrypted_message = encrypted_message + b64encode(block)
-
-    return encrypted_message
-
-
-"""This function is used to decrypt the data"""
-def decrypt(password, encrypted_message, algorithm_name, cipherMode_name=None):
-    message = b""
-    #pointer to read message as blocks
-    pointer = 0
-    #get salt
-    salt = encrypted_message[pointer:pointer + math.ceil(16 / 3) * 4]
-    pointer += math.ceil(16 / 3) * 4
-    salt = b64decode(salt)
-    #gemerate key
-    key = generate_key(algorithm_name, salt, password)
-    #algorithm and block length
-    if algorithm_name == 'ChaCha20':
-        #geting nonce
-        nonce = encrypted_message[pointer:pointer + math.ceil(16 / 3) * 4]
-        pointer += math.ceil(16 / 3) * 4
-        nonce = b64decode(nonce)
-        algorithm = algorithms.ChaCha20(key, nonce)
-        #chacha20 dont use block, but i will divide the message in blocks
-        blockLength = 128
-    elif algorithm_name == '3DES':
-        blockLength = 8
-        algorithm = algorithms.TripleDES(key)
-    else:
-        #AES-128
-        blockLength = 16
-        algorithm = algorithms.AES(key)
-    #get iv
-    if algorithm_name != "ChaCha20" and cipherMode_name != "ECB":
-        iv = encrypted_message[pointer:pointer + math.ceil(blockLength / 3) * 4]
-        pointer+= math.ceil(blockLength / 3) * 4
-        iv = b64decode(iv)
-    #cipher mode
+        iv = token_bytes(block_length)
 
     if cipherMode_name == "CFB":
         cipher_mode = modes.CFB(iv)
@@ -228,38 +134,102 @@ def decrypt(password, encrypted_message, algorithm_name, cipherMode_name=None):
     elif cipherMode_name == "ECB":
         cipher_mode = modes.ECB()
     else:
-        #chacha20 -> dont use cipher mode
         cipher_mode = None
-    #cipher definition
-    cipher = Cipher(algorithm, cipher_mode)
-    #decrypt init
-    decryptor = cipher.decryptor()
-    nextBlock = b64decode(encrypted_message[pointer:pointer + math.ceil(blockLength / 3) * 4])
-    pointer+= math.ceil(blockLength / 3) * 4
-    while True:
-        block = nextBlock
-        nextBlock = b64decode(encrypted_message[pointer:pointer + math.ceil(blockLength / 3) * 4])
-        pointer+= math.ceil(blockLength / 3) * 4
-        #decrypt block
-        block = decryptor.update(block)
-        #block == last block
-        if nextBlock == b"":
-            break
-        #write
-        message = message + block
-    #padding
 
-    #write
+    cipher = Cipher(algorithm, cipher_mode)
+    encryptor = cipher.encryptor()
+    encrypted_message = b""
+
+    encrypted_message = encrypted_message + b64encode(salt)
+    if iv != None:
+        encrypted_message = encrypted_message + b64encode(iv)
+    if algorithm_name == "ChaCha20":
+        encrypted_message = encrypted_message + b64encode(nonce)
+
+    pointer = 0
+    while True:
+        block = message[pointer:pointer + block_length]
+        pointer += block_length
+
+        if block == "":
+            break
+
+        if len(block) != block_length:
+            break
+
+        block = encryptor.update(block)
+        encrypted_message = encrypted_message + b64encode(block)
+
+    if algorithm_name != "ChaCha20":
+        block = add_padding(block, algorithm_name)
+    block = encryptor.update(block)
+    encrypted_message = encrypted_message + b64encode(block)
+
+    return encrypted_message
+
+
+"""This function is used to decrypt the data"""
+def decrypt(password, encrypted_message, algorithm_name, cipherMode=None):
+    message = b""
+    pointer = 0
+
+    salt = encrypted_message[pointer:pointer + math.ceil(16 / 3) * 4]
+    pointer += math.ceil(16 / 3) * 4
+    salt = b64decode(salt)
+    key = generate_key(algorithm_name, salt, password)
+
+
+    if algorithm_name == 'ChaCha20':
+        nonce = encrypted_message[pointer:pointer + math.ceil( 16 / 3) *4]
+        pointer += math.ceil(16 / 3) * 4
+        nonce = b64decode(nonce)
+        algorithm = algorithms.ChaCha20(key, nonce)
+        block_length = 128
+    elif algorithm_name == '3DES':
+        block_length = 8
+        algorithm = algorithms.TripleDES(key)
+    else:
+        block_length = 16
+        algorithm = algorithms.AES(key)
+
+    if algorithm_name != "ChaCha20" and cipherMode != "ECB":
+        iv = encrypted_message[pointer:pointer + math.ceil(block_length / 3) * 4]
+        pointer+= math.ceil(block_length / 3) * 4
+        iv = b64decode(iv)
+
+    if cipherMode == "CFB":
+        cipher_mode = modes.CFB(iv)
+    elif cipherMode == "OFB":
+        cipher_mode = modes.OFB(iv)
+    elif cipherMode == "ECB":
+        cipher_mode = modes.ECB()
+    else:
+        cipher_mode = None
+
+    cipher = Cipher(algorithm, cipher_mode)
+    decryptor = cipher.decryptor()
+    next_block = b64decode(encrypted_message[pointer:pointer + math.ceil(block_length / 3) * 4])
+    pointer+= math.ceil(block_length / 3) * 4
+
+    while True:
+        block = next_block
+        next_block = b64decode(encrypted_message[pointer:pointer + math.ceil(block_length /3 ) *4])
+        pointer+= math.ceil(block_length/3)*4
+        block = decryptor.update(block)
+
+        if next_block == b"":
+            break
+        message = message + block
+
+    if algorithm_name != "ChaCha20":
+        block = remove_padding(block)
+
     message = message + block
 
     return message
 
 
 """This function is used to return the Diffie Hellman parameters"""
-#def diffie_hellman_parameters(key=2048):
-#    parameters = dh.generate_parameters(generator=2, key_size=key)
-#    return parameters
-
 def diffie_hellman_parameters(key_size=2048):
     parameters = dh.generate_parameters(generator=2, key_size=key_size)
     parameter_numbers = parameters.parameter_numbers()
@@ -313,6 +283,7 @@ def generate_rsa_public_key(private_key, file_to_be_saved=None):
         file_to_be_saved_public_key.close()
 
     return public_key
+
 
 """This function is used to generate a private key"""
 def generate_rsa_private_key(key_size, file_to_be_saved=None, password=None):
@@ -545,12 +516,6 @@ class MediaServer(resource.Resource):
 
     #Send the list of media files to clients
     def do_list(self, request):
-        """object_identifier = request.getHeader('Object Identifier')
-        if object_identifier not in self.users:
-            request.setResponseCode(401)
-            return json.dumps(encrypt(self.secret_key, 'Not authorized', self.ciphers[0],
-                                                     self.ciphers[1]).decode('latin')).encode()"""
-
         #Build list
         media_list = []
         for media_id in CATALOG:

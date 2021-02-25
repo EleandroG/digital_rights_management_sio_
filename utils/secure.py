@@ -14,41 +14,20 @@ from cryptography.hazmat.backends import default_backend
 cipherModes = ["ECB", "CFB", "OFB"]
 cipherAlgorithms = ['AES', '3DES', 'ChaCha20']
 
-def add_padding(message_block, algorithm_name):
-    if algorithm_name == "3DES":
-        length_block = 8
-    else:
-        length_block = 16
 
-    size_padding = length_block - (len(message_block) % length_block)
-
-    message_block = message_block + bytes([size_padding] * size_padding)
-    return message_block
-
-
-def remove_padding(message_block):
-    length_block = len(message_block)
-
-    size_padding = int(message_block[-1])
-
-    message_block = message_block[:length_block - size_padding]
-    return message_block
-
-
-def generate_key(algorithm_name, salt, password):
+def generate_key(algorithm, salt, password):
     if type(password) != type(b""):
         password = password.encode()
 
-    if algorithm_name == '3DES':
+    if algorithm == '3DES':
         length = 24
-    elif algorithm_name == 'ChaCha20':
+    elif algorithm == 'ChaCha20':
         length = 32
     else:
         length = 16
     pbkdf = PBKDF2HMAC(salt=salt, algorithm=hashes.SHA256(), iterations=10**5, length=length,
                        backend=default_backend())
-
-    key = pbkdf.derive(password)    #type key == byte
+    key = pbkdf.derive(password)
 
     return key
 
@@ -175,6 +154,27 @@ def decrypt(password, encrypted_message, algorithm_name, cipherMode=None):
     message = message + block
 
     return message
+
+
+def add_padding(message_block, algorithm):
+    if algorithm == "3DES":
+        length_block = 8
+    else:
+        length_block = 16
+
+    size_padding = length_block - (len(message_block) % length_block)
+
+    message_block = message_block + bytes([size_padding] * size_padding)
+    return message_block
+
+
+def remove_padding(message_block):
+    length_block = len(message_block)
+
+    size_padding = int(message_block[-1])
+
+    message_block = message_block[:length_block - size_padding]
+    return message_block
 
 
 def decrypt_file(password, file_to_be_decrypted, fileToSave_name, algorithm_name, cipherMode=None):
